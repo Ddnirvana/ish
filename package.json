@@ -6,8 +6,8 @@
   "description": "The intent shell: native zsh speed with Pi intelligence and durable system context",
   "bin": {
     "ish": "bin/ish",
-    "intentd": "dist/src/daemon-cli.js",
-    "ishctl": "dist/src/ctl-cli.js"
+    "intentd": "bin/intentd",
+    "ishctl": "bin/ishctl"
   },
   "pi": {
     "extensions": [

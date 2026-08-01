@@ -31,7 +31,7 @@ Documentation=https://github.com/intent-shell/ish
 
 [Service]
 Type=simple
-ExecStart=$root/dist/src/daemon-cli.js
+ExecStart=$root/bin/intentd
 Restart=on-failure
 RestartSec=2
 

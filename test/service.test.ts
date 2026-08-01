@@ -23,7 +23,7 @@ test("systemd user service lifecycle is idempotent and stores no credential", as
 	const unit = path.join(root, "config", "systemd", "user", "ish-intentd.service");
 	const contents = await readFile(unit, "utf8");
 	assert.match(contents, /Restart=on-failure/);
-	assert.match(contents, /dist\/src\/daemon-cli\.js/);
+	assert.match(contents, /bin\/intentd/);
 	assert.doesNotMatch(contents, /must-not-be-written|API_KEY/);
 	let result = spawnSync(service, ["uninstall"], { encoding: "utf8", env });
 	assert.equal(result.status, 0, result.stderr);

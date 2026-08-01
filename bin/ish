@@ -48,6 +48,7 @@ case "${1:-}" in
 esac
 
 export ISH_ROOT=$root
+export PATH="$root/bin:$PATH"
 export ISH_USER_ZDOTDIR=${ZDOTDIR:-$HOME}
 export ISH_ZDOTDIR=$root/shell/zdot
 export ZDOTDIR=$ISH_ZDOTDIR
