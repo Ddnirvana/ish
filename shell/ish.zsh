@@ -25,6 +25,9 @@ typeset -gi _ISH_ACTION_FD=${_ISH_ACTION_FD:--1}
 typeset -gi _ISH_GENERATION=${_ISH_GENERATION:-0}
 typeset -g _ISH_ACTIVE_ACTION=""
 typeset -g _ISH_ACTIVE_COMMAND=""
+typeset -g _ISH_PENDING_AGENT=""
+typeset -g _ISH_PENDING_CONTROL=""
+typeset -gi _ISH_RESTORE_HIST_IGNORE_SPACE=0
 typeset -gA _ISH_SEEN_ACTIONS
 
 _ish_async_ctl() {
@@ -79,6 +82,23 @@ _ish_preexec() {
 
 _ish_precmd() {
   local previous_status=$?
+  if [[ -n "$_ISH_PENDING_AGENT" ]]; then
+    local prompt="$_ISH_PENDING_AGENT"
+    _ISH_PENDING_AGENT=""
+    if (( $+commands[ishctl] )); then
+      ISH_TUI=1 command ishctl ask -- "$prompt"
+    else
+      print -u2 -r -- "ish: agent support is unavailable; run 'ish doctor'"
+    fi
+  elif [[ -n "$_ISH_PENDING_CONTROL" ]]; then
+    local control="$_ISH_PENDING_CONTROL"
+    _ISH_PENDING_CONTROL=""
+    command ishctl shell-control -- "$control"
+  fi
+  if (( _ISH_RESTORE_HIST_IGNORE_SPACE )); then
+    unsetopt hist_ignore_space
+    _ISH_RESTORE_HIST_IGNORE_SPACE=0
+  fi
   [[ -n "$_ISH_CAPSULE_ID" ]] || return 0
   if [[ -n "$_ISH_ACTIVE_ACTION" ]]; then
     if (( previous_status == 0 )); then
@@ -242,10 +262,6 @@ _ish_initialize_capsule() {
 
   zle -N _ish_action_ready_widget
   zle -F -w "$_ISH_ACTION_FD" _ish_action_ready_widget
-  autoload -Uz add-zsh-hook
-  add-zsh-hook preexec _ish_preexec
-  add-zsh-hook precmd _ish_precmd
-  add-zsh-hook zshexit _ish_shutdown_capsule
 
   local parent_pid=$$
   local capsule_id="$_ISH_CAPSULE_ID"
@@ -268,16 +284,38 @@ _ish_accept_line() {
   fi
 
   local route
-  route="$(command ishctl route -- "$line" 2>/dev/null)" || route="native"
+  if [[ "$line" == \? || "$line" == \?\ * || "$line" == /ask || "$line" == /ask\ * ]]; then
+    route="agent"
+  else
+    route="$(command ishctl route -- "$line" 2>/dev/null)" || route="native"
+  fi
   case "$route" in
     agent)
       local prompt="$line"
       [[ "$prompt" == \?\ * ]] && prompt="${prompt#\? }"
       [[ "$prompt" == /ask\ * ]] && prompt="${prompt#/ask }"
-      BUFFER="ishctl ask -- ${(q)prompt}"
+      print -s -- "$line"
+      _ISH_PENDING_AGENT="$prompt"
+      if [[ ! -o hist_ignore_space ]]; then
+        setopt hist_ignore_space
+        _ISH_RESTORE_HIST_IGNORE_SPACE=1
+      fi
+      BUFFER=" :"
+      CURSOR=2
+      zle .accept-line
+      return
       ;;
     control)
-      BUFFER="ishctl shell-control -- ${(q)line}"
+      print -s -- "$line"
+      _ISH_PENDING_CONTROL="$line"
+      if [[ ! -o hist_ignore_space ]]; then
+        setopt hist_ignore_space
+        _ISH_RESTORE_HIST_IGNORE_SPACE=1
+      fi
+      BUFFER=" :"
+      CURSOR=2
+      zle .accept-line
+      return
       ;;
     native)
       ;;
@@ -288,7 +326,29 @@ _ish_accept_line() {
   zle .accept-line
 }
 
+_ish_setup_prompt() {
+  emulate -L zsh
+  [[ "${ISH_PROMPT_STYLE:-full}" == (off|keep) ]] && return 0
+  setopt prompt_subst
+  typeset -g _ISH_ORIGINAL_PROMPT="${_ISH_ORIGINAL_PROMPT:-$PROMPT}"
+  typeset -g _ISH_ORIGINAL_RPROMPT="${_ISH_ORIGINAL_RPROMPT:-$RPROMPT}"
+  local arrow="❯"
+  [[ "${ISH_ASCII:-0}" == 1 ]] && arrow=">"
+  if [[ -n "${NO_COLOR:-}" || "${TERM:-}" == dumb ]]; then
+    PROMPT="ish %25<..<%~%<< $arrow "
+    RPROMPT='${_ISH_CAPSULE_ID:+intentd}'
+  else
+    PROMPT="%F{39}%Bish%b%f %F{244}%25<..<%~%<<%f %(?..%F{203}exit:%?%f )%F{39}$arrow%f "
+    RPROMPT='%F{244}${_ISH_CAPSULE_ID:+intentd}%f'
+  fi
+}
+
 if [[ -o interactive ]]; then
+  autoload -Uz add-zsh-hook
+  add-zsh-hook preexec _ish_preexec
+  add-zsh-hook precmd _ish_precmd
+  add-zsh-hook zshexit _ish_shutdown_capsule
   zle -N accept-line _ish_accept_line
   _ish_initialize_capsule
+  _ish_setup_prompt
 fi

@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { IntentClient } from "./client.js";
 import type { ContextEventKind, ContextScope } from "./context.js";
 import { routeInput } from "./gateway.js";
 import { defaultSocketPath, defaultStateDir } from "./paths.js";
 import { TmuxTopology, type BroadcastPlan, type TmuxPane } from "./tmux.js";
 import type { IntentRecord } from "./types.js";
+import { ISH_SYSTEM_PROMPT, renderAgentEnd, renderAgentStart, renderFailure } from "./ui.js";
 import { cwdToken, type ActionRecord, type ActionTargetState, type EffectClass } from "./capsules.js";
 
 function summarize(record: IntentRecord): string {
@@ -56,20 +59,43 @@ function printPlan(plan: BroadcastPlan): void {
 	for (const { pane, reason } of plan.excluded) console.log(`excluded\t${formatPane(pane)}\t${reason}`);
 }
 
+function resolvePiBinary(): string {
+	const configured = process.env.ISH_PI?.trim();
+	if (configured) return configured;
+	const executable = process.platform === "win32" ? "pi.cmd" : "pi";
+	const bundled = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "node_modules", ".bin", executable);
+	if (existsSync(bundled)) return bundled;
+	if (commandExists("pi")) return "pi";
+	throw new Error("Pi is unavailable. Run `ish doctor` or set ISH_PI to a Pi executable.");
+}
+
 async function runPi(prompt: string): Promise<void> {
 	if (!prompt.trim()) throw new Error("agent request is required");
-	const binary = process.env.ISH_PI ?? "pi";
+	const binary = resolvePiBinary();
 	const sessionDir = process.env.ISH_PI_SESSION_DIR ?? path.join(defaultStateDir(), "pi-sessions");
-	const child = spawn(binary, ["--session-dir", sessionDir, "--continue", "-p", prompt], {
+	const started = Date.now();
+	process.stdout.write(renderAgentStart(prompt));
+	const child = spawn(binary, [
+		"--session-dir",
+		sessionDir,
+		"--continue",
+		"--append-system-prompt",
+		ISH_SYSTEM_PROMPT,
+		"-p",
+		prompt,
+	], {
 		cwd: process.cwd(),
 		env: process.env,
 		stdio: "inherit",
 	});
 	const exitCode = await new Promise<number>((resolve, reject) => {
-		child.once("error", reject);
+		child.once("error", () => {
+			reject(new Error(`Pi could not start from ${binary}. Run \`ish doctor\` or correct ISH_PI.`));
+		});
 		child.once("close", (code) => resolve(code ?? 1));
 	});
 	if (exitCode !== 0) throw new Error(`${binary} exited with code ${exitCode}`);
+	process.stdout.write(renderAgentEnd(Date.now() - started));
 }
 
 async function currentScope(): Promise<ContextScope> {
@@ -358,4 +384,10 @@ async function run(command = "help", rawArgs: string[]): Promise<void> {
 }
 
 const [command, ...args] = process.argv.slice(2);
-await run(command, args);
+try {
+	await run(command, args);
+} catch (error) {
+	const message = error instanceof Error ? error.message : String(error);
+	console.error(renderFailure(message));
+	process.exitCode = 1;
+}

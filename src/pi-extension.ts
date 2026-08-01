@@ -1,7 +1,7 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { IntentClient } from "./client.js";
 import { defaultSocketPath } from "./paths.js";
+import type { PiExtensionAPI, PiExtensionContext } from "./pi-types.js";
 import type { IntentRecord } from "./types.js";
 
 const IntentParams = Type.Object({
@@ -32,7 +32,7 @@ function line(record: IntentRecord): string {
 
 async function runAction(
 	action: "submit" | "list" | "show" | "logs" | "cancel" | "retry",
-	ctx: ExtensionContext,
+	ctx: PiExtensionContext,
 	objective?: string,
 	id?: string,
 	acceptance?: string[],
@@ -63,7 +63,7 @@ async function runAction(
 	}
 }
 
-export default function (pi: ExtensionAPI) {
+export default function (pi: PiExtensionAPI) {
 	pi.registerTool({
 		name: "intent_job",
 		label: "Intent Job",
