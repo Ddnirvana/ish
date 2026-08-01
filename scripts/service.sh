@@ -27,7 +27,6 @@ write_unit() {
   cat >"$temporary" <<EOF
 [Unit]
 Description=ish intent service
-Documentation=https://github.com/intent-shell/ish
 
 [Service]
 Type=simple
