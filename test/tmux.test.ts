@@ -34,6 +34,7 @@ test("tmux topology discovers system-level session, window, and pane state", asy
 		path: "/srv/api",
 		inMode: false,
 	});
+	assert.match(fake.calls[0][3], /\|:ish:\|/);
 });
 
 test("broadcast planning selects only idle shells and excludes busy panes", async () => {

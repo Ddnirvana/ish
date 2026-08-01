@@ -26,6 +26,7 @@ export interface BroadcastPlan {
 }
 
 const SHELL_PROCESSES = new Set(["bash", "dash", "fish", "ish", "ksh", "sh", "zsh"]);
+const FIELD_SEPARATOR = "|:ish:|";
 const FORMAT = [
 	"#{pane_id}",
 	"#{session_name}",
@@ -35,7 +36,7 @@ const FORMAT = [
 	"#{pane_current_command}",
 	"#{pane_current_path}",
 	"#{pane_in_mode}",
-].join("\t");
+].join(FIELD_SEPARATOR);
 
 export class SystemTmuxExecutor implements TmuxExecutor {
 	constructor(private readonly socketName?: string) {}
@@ -56,7 +57,8 @@ export class TmuxTopology {
 			.split("\n")
 			.filter(Boolean)
 			.map((line) => {
-				const [id, session, windowId, windowIndex, windowName, command, panePath, inMode] = line.split("\t");
+				const fields = line.includes(FIELD_SEPARATOR) ? line.split(FIELD_SEPARATOR) : line.split("\t");
+				const [id, session, windowId, windowIndex, windowName, command, panePath, inMode] = fields;
 				return {
 					id,
 					session,
