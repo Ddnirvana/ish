@@ -20,15 +20,20 @@ test("broadcast executes in isolated real tmux shell panes", { skip: !hasTmux },
 		await rm(path.join(process.env.TMUX_TMPDIR ?? "/tmp", `tmux-${uid}`, socket), { force: true });
 	});
 
-	await executor.run(["-f", "/dev/null", "new-session", "-d", "-s", "prod", "zsh"]);
-	await executor.run(["split-window", "-d", "-t", "prod:0", "zsh"]);
+	await executor.run(["-f", "/dev/null", "new-session", "-d", "-s", "prod", "zsh", "-dfi"]);
+	await executor.run(["split-window", "-d", "-t", "prod:0", "zsh", "-dfi"]);
 	const topology = new TmuxTopology(executor);
 	let panes = await topology.discover();
-	const deadline = Date.now() + 3000;
+	const deadline = Date.now() + 5000;
 	while (Date.now() < deadline && panes.filter((pane) => pane.session === "prod" && pane.command === "zsh").length !== 2) {
 		await new Promise((resolve) => setTimeout(resolve, 25));
 		panes = await topology.discover();
 	}
+	assert.equal(
+		panes.filter((pane) => pane.session === "prod" && pane.command === "zsh").length,
+		2,
+		`expected two persistent zsh panes: ${JSON.stringify(panes)}`,
+	);
 	const plan = topology.planBroadcast(panes, "session:prod", "printf 'ISH_REAL_TMUX_OK\\n'");
 	assert.equal(plan.targets.length, 2);
 	await topology.executeBroadcast(plan);
