@@ -206,7 +206,7 @@ _ish_initialize_capsule() {
   [[ -z "$_ISH_CAPSULE_ID" ]] || return 0
   zmodload zsh/datetime 2>/dev/null || return 0
 
-  local runtime_root="${ISH_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}/intentd-ish-${EUID}}"
+  local runtime_root="${ISH_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}/ish-${EUID}}"
   local endpoint_dir="$runtime_root/capsules"
   command mkdir -p -m 700 -- "$endpoint_dir" || return 0
   _ISH_CAPSULE_ID="$(command ishctl capsule-id 2>/dev/null)" || { _ISH_CAPSULE_ID=""; return 0; }

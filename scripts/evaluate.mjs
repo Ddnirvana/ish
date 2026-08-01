@@ -49,7 +49,7 @@ function commandOutput(command, args = []) {
   return execFileSync(command, args, { encoding: "utf8" }).trim();
 }
 
-const root = await mkdtemp(path.join(os.tmpdir(), "intentd-ish-eval-"));
+const root = await mkdtemp(path.join(os.tmpdir(), "ish-eval-"));
 const socketPath = path.join(root, "intentd.sock");
 const stateDir = path.join(root, "state");
 const runtimeDir = path.join(root, "runtime");
@@ -58,7 +58,7 @@ const zdotdir = path.join(root, "zdot");
 const actionFile = path.join(root, "action-results.txt");
 const baselineFile = path.join(root, "baseline-results.txt");
 const restartFile = path.join(root, "restart-results.txt");
-const tmuxSocket = `intentd-ish-eval-${process.pid}-${Date.now()}`;
+const tmuxSocket = `ish-eval-${process.pid}-${Date.now()}`;
 const executor = new SystemTmuxExecutor(tmuxSocket);
 const fakePi = path.join(sourceRoot, "dist", "test", "fixtures", "fake-pi.js");
 const daemonOptions = { socketPath, stateDir, runner: { command: process.execPath, args: [fakePi] } };
@@ -204,7 +204,7 @@ try {
   const actionLines = (await readFile(actionFile, "utf8")).trim().split("\n").filter(Boolean);
   const baselineLines = (await readFile(baselineFile, "utf8")).trim().split("\n").filter(Boolean);
   const report = {
-    schema: "intentd-ish-linux-evaluation/v1",
+    schema: "ish-linux-evaluation/v1",
     generatedAt: new Date().toISOString(),
     environment: {
       hostname: os.hostname(),

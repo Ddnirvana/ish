@@ -1,9 +1,9 @@
 {
-  "name": "intentd-ish",
+  "name": "ish",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Shell-primary semantic routing, topology control, and durable agent coordination",
+  "description": "The intent shell: native zsh speed with Pi intelligence and durable system context",
   "bin": {
     "intentd": "dist/src/daemon-cli.js",
     "ishctl": "dist/src/ctl-cli.js"

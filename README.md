@@ -1,7 +1,7 @@
-# intentd + ish
+# ish
 
-`ish` keeps zsh as the interactive shell and embeds Pi as an optional agent
-slow path. `intentd` owns durable agent jobs, scoped context, live shell
+**ish is the intent shell:** native zsh speed for commands you already know,
+with Pi intelligence when you ask for help. Its internal `intentd` service owns durable agent jobs, scoped context, live shell
 capsules, and version-checked multi-shell actions for one Linux user.
 
 The central mechanism is shell-resident admission. `intentd` snapshots each
@@ -133,7 +133,7 @@ tmux server, FIFOs, and state directory.
 The separate executable protocol model is under
 `../artifacts/evaluation/topology-protocol/`. Accepted Linux evidence and the
 analysis are under `../artifacts/evaluation/linux-e2e/` and
-`../docs/intentd-ish-e2e-evaluation.md`.
+the separate project evaluation workspace.
 
 ## Architecture
 

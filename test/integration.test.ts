@@ -26,7 +26,7 @@ async function waitFor(
 }
 
 test("a second client can inspect, read, and cancel durable Pi jobs", async (t) => {
-	const root = await mkdtemp(path.join(os.tmpdir(), "intentd-ish-test-"));
+	const root = await mkdtemp(path.join(os.tmpdir(), "ish-test-"));
 	const socketPath = path.join(root, "intentd.sock");
 	const stateDir = path.join(root, "state");
 	const daemon = new IntentDaemon({
@@ -72,7 +72,7 @@ test("a second client can inspect, read, and cancel durable Pi jobs", async (t) 
 });
 
 test("completed intent state survives daemon restart", async (t) => {
-	const root = await mkdtemp(path.join(os.tmpdir(), "intentd-ish-restart-"));
+	const root = await mkdtemp(path.join(os.tmpdir(), "ish-restart-"));
 	const socketPath = path.join(root, "intentd.sock");
 	const stateDir = path.join(root, "state");
 	const options = {
