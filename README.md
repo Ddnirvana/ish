@@ -195,7 +195,8 @@ as an explicitly unsafe comparison baseline.
 ## Develop
 
 ```bash
-npm ci --ignore-scripts
+npm ci --no-audit
+npm audit
 npm test
 npm run demo
 ```
@@ -204,6 +205,8 @@ The suite covers deterministic routing, terminal formatting, real zsh ZLE,
 approval cancellation/execution, capsule races, restart recovery, context,
 durable jobs, real isolated tmux panes, configuration, launcher compatibility,
 systemd unit lifecycle, and disposable-prefix install/upgrade/uninstall.
+The post-install step also verifies and applies the temporary Pi dependency
+hardening documented in `SECURITY.md`.
 
 The terminal GIF is reproducible with
 [VHS](https://github.com/charmbracelet/vhs):

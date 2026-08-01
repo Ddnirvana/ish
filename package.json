@@ -17,8 +17,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/test/*.test.js && zsh -n shell/ish.zsh",
-		"demo": "npm run build && node scripts/evaluate.mjs --iterations 5",
-		"demo:jobs": "npm run build && bash scripts/demo.sh",
+    "demo": "npm run build && node scripts/evaluate.mjs --iterations 5",
+    "demo:jobs": "npm run build && bash scripts/demo.sh",
+    "postinstall": "bash scripts/harden-dependencies.sh",
     "check": "npm run build && npm test"
   },
   "dependencies": {

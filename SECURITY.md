@@ -42,6 +42,15 @@ that only inside an OS sandbox. Never send secrets through context records or
 prompts. Inject provider credentials only through the process environment or
 the provider's supported credential store.
 
+## Supply-chain hardening
+
+Pi 0.83.0 publishes a shrinkwrap that pins `brace-expansion` 5.0.7, affected by
+GHSA-mh99-v99m-4gvg. Until Pi publishes a corrected release, ish vendors the
+official 5.0.9 npm archive and replaces only that nested package after install.
+`scripts/harden-dependencies.sh` verifies the archive's published SHA-1 and the
+installed version, and fails closed on an unexpected Pi dependency layout.
+Remove this workaround when the pinned Pi release includes 5.0.8 or newer.
+
 ## Reporting
 
 For this research prototype, report security issues privately to the repository

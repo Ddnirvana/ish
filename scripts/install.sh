@@ -15,7 +15,8 @@ if (( node_major < 22 )); then
 fi
 
 cd "$root"
-npm ci --ignore-scripts
+npm ci --ignore-scripts --no-audit
+bash scripts/harden-dependencies.sh
 npm run build
 
 mkdir -p "$(dirname "$libdir")" "$bindir"
@@ -23,11 +24,12 @@ stage="$libdir.stage.$$"
 trap 'rm -rf "$stage"' EXIT
 rm -rf "$stage"
 mkdir -p "$stage"
-cp -R bin dist shell scripts "$stage/"
+cp -R bin dist shell scripts vendor "$stage/"
 cp package.json package-lock.json README.md SECURITY.md LICENSE "$stage/"
 (
   cd "$stage"
-  npm ci --omit=dev --ignore-scripts
+  npm ci --omit=dev --ignore-scripts --no-audit
+  bash scripts/harden-dependencies.sh
 )
 chmod 755 "$stage/bin/ish" "$stage/bin/intentd" "$stage/bin/ishctl" "$stage/scripts/service.sh"
 rm -rf "$libdir.previous"
