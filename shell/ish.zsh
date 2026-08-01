@@ -48,6 +48,62 @@ _ish_tmux_field() {
   command tmux display-message -p "$format" 2>/dev/null || print -r -- "-"
 }
 
+_ish_risk_candidate() {
+  emulate -L zsh
+  setopt extendedglob
+  local line="${1:l}"
+  [[ "$line" == *rm\ * || "$line" == rm\ * ||
+     "$line" == *sudo\ * || "$line" == sudo\ * ||
+     "$line" == *(mkfs|wipefs|fdisk|cfdisk|sfdisk|parted|shutdown|reboot|poweroff|halt)* ||
+     "$line" == *dd\ *of=/dev/* || "$line" == *(curl|wget)*\|*(sh|bash|zsh|python|node)* ||
+     "$line" == *git\ *(reset\ --hard|clean\ -*|checkout\ --*|restore\ *--worktree*) ||
+     "$line" == *(docker\ system\ prune|kubectl\ delete|terraform\ destroy|drop\ database|drop\ schema|drop\ table)* ||
+     "$line" == *(chmod|chown)*(-R|--recursive)* ||
+     "$line" == /apply\ *--execute* || "$line" == /broadcast\ *--execute* ]]
+}
+
+_ish_confirm_risk() {
+  emulate -L zsh
+  local line="$1"
+  local assessment level rule reason
+  assessment="$(command ishctl risk -- "$line" 2>/dev/null)" || assessment=$'critical\tclassifier-unavailable\tish could not verify the operation safely'
+  IFS=$'\t' read -r level rule reason <<< "$assessment"
+  [[ "$level" == safe || "$level" == caution ]] && return 0
+
+  local width=$(( ${COLUMNS:-80} / 2 ))
+  (( width < 20 )) && width=20
+  local command_view="$line"
+  (( ${#command_view} > width )) && command_view="${command_view[1,$(( width - 3 ))]}..."
+  zle -M "! ish approval required [$level/$rule] | $command_view | $reason | y=run once e=edit n=cancel"
+  zle -R
+  local answer
+  read -rk 1 answer
+  case "${answer:l}" in
+    y)
+      zle -M "ish approved once: $rule"
+      BUFFER="$line"
+      CURSOR=${#BUFFER}
+      return 0
+      ;;
+    e)
+      zle -M "ish returned the command for editing; changed text requires approval again"
+      BUFFER="$line"
+      CURSOR=${#BUFFER}
+      zle reset-prompt
+      zle -R
+      return 1
+      ;;
+    *)
+      BUFFER=""
+      CURSOR=0
+      zle -M "ish cancelled $rule; no command was run"
+      zle reset-prompt
+      zle -R
+      return 1
+      ;;
+  esac
+}
+
 _ish_report_action() {
   local state="$1"
   local exit_code="${2:-}"
@@ -277,6 +333,10 @@ _ish_initialize_capsule() {
 _ish_accept_line() {
   emulate -L zsh
   local line="$BUFFER"
+
+  if _ish_risk_candidate "$line" && ! _ish_confirm_risk "$line"; then
+    return
+  fi
 
   if _ish_native_fast_path "$line"; then
     zle .accept-line

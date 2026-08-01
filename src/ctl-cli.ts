@@ -8,6 +8,7 @@ import { IntentClient } from "./client.js";
 import type { ContextEventKind, ContextScope } from "./context.js";
 import { routeInput } from "./gateway.js";
 import { defaultSocketPath, defaultStateDir } from "./paths.js";
+import { assessRisk } from "./risk.js";
 import { TmuxTopology, type BroadcastPlan, type TmuxPane } from "./tmux.js";
 import type { IntentRecord } from "./types.js";
 import { ISH_SYSTEM_PROMPT, renderAgentEnd, renderAgentStart, renderFailure } from "./ui.js";
@@ -81,6 +82,8 @@ async function runPi(prompt: string): Promise<void> {
 		"--continue",
 		"--append-system-prompt",
 		ISH_SYSTEM_PROMPT,
+		"--tools",
+		process.env.ISH_PI_TOOLS ?? "read,grep,find,ls",
 		"-p",
 		prompt,
 	], {
@@ -159,6 +162,11 @@ async function run(command = "help", rawArgs: string[]): Promise<void> {
 	const args = withoutSeparator(rawArgs);
 	const client = new IntentClient(process.env.INTENTD_SOCKET ?? defaultSocketPath());
 	switch (command) {
+		case "risk": {
+			const assessment = assessRisk(args.join(" "));
+			console.log([assessment.level, assessment.rule, assessment.reason].join("\t"));
+			return;
+		}
 		case "route": {
 			const decision = routeInput(args.join(" "), { commandExists });
 			console.log(decision.route);
@@ -379,7 +387,7 @@ async function run(command = "help", rawArgs: string[]): Promise<void> {
 			console.log(JSON.stringify(await client.retry(args[0]), null, 2));
 			return;
 		default:
-			console.log("ishctl commands: route, ask, panes, broadcast, context, capsules, action, action-dispatch, actions, action-show, ping, submit, list, show, logs, cancel, retry");
+			console.log("ishctl commands: risk, route, ask, panes, broadcast, context, capsules, action, action-dispatch, actions, action-show, ping, submit, list, show, logs, cancel, retry");
 	}
 }
 
