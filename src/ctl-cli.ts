@@ -365,8 +365,20 @@ async function run(command = "help", rawArgs: string[]): Promise<void> {
 			await client.unregisterCapsule(args[0]);
 			return;
 		case "capsules":
-			for (const capsule of await client.listCapsules(args.includes("--all"))) {
-				console.log([capsule.id, capsule.mode, capsule.host, capsule.session ?? "-", capsule.pane ?? "-", capsule.generation, capsule.cwd].join("\t"));
+			{
+				const capsules = await client.listCapsules(args.includes("--all"));
+				if ((process.stdout.isTTY || process.env.ISH_TUI === "1") && !process.env.NO_COLOR) {
+					console.log("\u001b[38;5;39m◆ ish capsules\u001b[0m");
+					for (const capsule of capsules) {
+						const target = capsule.session ? `${capsule.session}${capsule.pane ? `/${capsule.pane}` : ""}` : "local";
+						console.log(`  \u001b[38;5;42m●\u001b[0m ${target.padEnd(14)} ${capsule.mode.padEnd(8)} gen ${String(capsule.generation).padEnd(3)} ${path.basename(capsule.cwd) || "/"}`);
+					}
+					if (!capsules.length) console.log("  \u001b[2mno live shells\u001b[0m");
+				} else {
+					for (const capsule of capsules) {
+						console.log([capsule.id, capsule.mode, capsule.host, capsule.session ?? "-", capsule.pane ?? "-", capsule.generation, capsule.cwd].join("\t"));
+					}
+				}
 			}
 			return;
 		case "action": {
