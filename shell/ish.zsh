@@ -149,7 +149,7 @@ _ish_precmd() {
   elif [[ -n "$_ISH_PENDING_CONTROL" ]]; then
     local control="$_ISH_PENDING_CONTROL"
     _ISH_PENDING_CONTROL=""
-    command ishctl shell-control -- "$control"
+    ISH_TUI=1 command ishctl shell-control -- "$control"
   fi
   if (( _ISH_RESTORE_HIST_IGNORE_SPACE )); then
     unsetopt hist_ignore_space
@@ -389,21 +389,22 @@ _ish_accept_line() {
 _ish_setup_prompt() {
   emulate -L zsh
   [[ "${ISH_PROMPT_STYLE:-full}" == (off|keep) ]] && return 0
-  setopt prompt_subst
+  setopt -g prompt_subst
   typeset -g _ISH_ORIGINAL_PROMPT="${_ISH_ORIGINAL_PROMPT:-$PROMPT}"
   typeset -g _ISH_ORIGINAL_RPROMPT="${_ISH_ORIGINAL_RPROMPT:-$RPROMPT}"
   local arrow="❯"
   [[ "${ISH_ASCII:-0}" == 1 ]] && arrow=">"
   if [[ -n "${NO_COLOR:-}" || "${TERM:-}" == dumb ]]; then
-    PROMPT="ish %25<..<%~%<< $arrow "
+    PROMPT="ish %1~ $arrow "
     RPROMPT='${_ISH_CAPSULE_ID:+intentd}'
   else
-    PROMPT="%F{39}%Bish%b%f %F{244}%25<..<%~%<<%f %(?..%F{203}exit:%?%f )%F{39}$arrow%f "
+    PROMPT="%F{39}%Bish%b%f %F{244}%1~%f %(?..%F{203}exit:%?%f )%F{39}$arrow%f "
     RPROMPT='%F{244}${_ISH_CAPSULE_ID:+intentd}%f'
   fi
 }
 
 if [[ -o interactive ]]; then
+  setopt prompt_subst
   autoload -Uz add-zsh-hook
   add-zsh-hook preexec _ish_preexec
   add-zsh-hook precmd _ish_precmd
