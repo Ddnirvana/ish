@@ -1,0 +1,54 @@
+#!/bin/sh
+set -eu
+
+self=$0
+while [ -L "$self" ]; do
+  target=$(readlink "$self")
+  case "$target" in
+    /*) self=$target ;;
+    *) self=$(dirname "$self")/$target ;;
+  esac
+done
+root=$(CDPATH= cd -- "$(dirname "$self")/.." && pwd)
+ctl="$root/dist/src/ctl-cli.js"
+
+case "${1:-}" in
+  config|doctor)
+    command=$1
+    shift
+    exec node "$ctl" "$command" "$@"
+    ;;
+  service)
+    shift
+    exec "$root/scripts/service.sh" "$@"
+    ;;
+  default-shell)
+    ish_path=$(command -v ish 2>/dev/null || printf '%s' "$0")
+    case "$ish_path" in
+      /*) ;;
+      *) ish_path=$(CDPATH= cd -- "$(dirname "$ish_path")" && pwd)/$(basename "$ish_path") ;;
+    esac
+    zsh_path=$(command -v zsh 2>/dev/null || printf '%s' /bin/zsh)
+    printf '%s\n' "ish does not change your login shell automatically."
+    printf '%s\n' "1. Verify first: ish doctor"
+    printf '%s\n' "2. Ask an administrator to add this exact path to /etc/shells: $ish_path"
+    printf '%s\n' "3. Change it explicitly: chsh -s $ish_path"
+    printf '%s\n' "4. Log out and back in."
+    printf '%s\n' "Rollback: chsh -s $zsh_path"
+    exit 0
+    ;;
+  --version|-v)
+    exec node -e "const p=require('$root/package.json'); console.log('ish '+p.version)"
+    ;;
+  help|-h|--help)
+    printf '%s\n' "ish - the intent shell"
+    printf '%s\n' "usage: ish [zsh arguments] | config | doctor | service | default-shell"
+    exit 0
+    ;;
+esac
+
+export ISH_ROOT=$root
+export ISH_USER_ZDOTDIR=${ZDOTDIR:-$HOME}
+export ISH_ZDOTDIR=$root/shell/zdot
+export ZDOTDIR=$ISH_ZDOTDIR
+exec zsh "$@"

@@ -13,6 +13,7 @@ import { TmuxTopology, type BroadcastPlan, type TmuxPane } from "./tmux.js";
 import type { IntentRecord } from "./types.js";
 import { ISH_SYSTEM_PROMPT, renderAgentEnd, renderAgentStart, renderFailure } from "./ui.js";
 import { cwdToken, type ActionRecord, type ActionTargetState, type EffectClass } from "./capsules.js";
+import { defaultConfigPath, readConfig, updateConfig, type IshConfigKey } from "./config.js";
 
 function summarize(record: IntentRecord): string {
 	return [record.id, record.status.padEnd(11), record.requester, record.objective].join("\t");
@@ -73,20 +74,26 @@ function resolvePiBinary(): string {
 async function runPi(prompt: string): Promise<void> {
 	if (!prompt.trim()) throw new Error("agent request is required");
 	const binary = resolvePiBinary();
+	const config = await readConfig();
 	const sessionDir = process.env.ISH_PI_SESSION_DIR ?? path.join(defaultStateDir(), "pi-sessions");
 	const started = Date.now();
 	process.stdout.write(renderAgentStart(prompt));
-	const child = spawn(binary, [
+	const piArgs = [
 		"--session-dir",
 		sessionDir,
 		"--continue",
+	];
+	if (config.provider) piArgs.push("--provider", config.provider);
+	if (config.model) piArgs.push("--model", config.model);
+	piArgs.push(
 		"--append-system-prompt",
 		ISH_SYSTEM_PROMPT,
 		"--tools",
 		process.env.ISH_PI_TOOLS ?? "read,grep,find,ls",
 		"-p",
 		prompt,
-	], {
+	);
+	const child = spawn(binary, piArgs, {
 		cwd: process.cwd(),
 		env: process.env,
 		stdio: "inherit",
@@ -162,6 +169,68 @@ async function run(command = "help", rawArgs: string[]): Promise<void> {
 	const args = withoutSeparator(rawArgs);
 	const client = new IntentClient(process.env.INTENTD_SOCKET ?? defaultSocketPath());
 	switch (command) {
+		case "config": {
+			const subcommand = args[0] ?? "show";
+			if (subcommand === "show") {
+				console.log(JSON.stringify({ path: defaultConfigPath(), ...(await readConfig()) }, null, 2));
+				return;
+			}
+			const key = args[1] as IshConfigKey | undefined;
+			if (!key || !["provider", "model"].includes(key)) {
+				throw new Error("usage: ish config show | set provider|model <value> | unset provider|model");
+			}
+			if (subcommand === "set") {
+				if (!args[2]) throw new Error(`missing value for ${key}`);
+				console.log(JSON.stringify(await updateConfig(key, args[2]), null, 2));
+				return;
+			}
+			if (subcommand === "unset") {
+				console.log(JSON.stringify(await updateConfig(key, undefined), null, 2));
+				return;
+			}
+			throw new Error("usage: ish config show | set provider|model <value> | unset provider|model");
+		}
+		case "doctor": {
+			let failures = 0;
+			const check = (state: "ok" | "warn" | "fail", label: string, detail: string) => {
+				console.log(`[${state}] ${label}: ${detail}`);
+				if (state === "fail") failures += 1;
+			};
+			const [major, minor] = process.versions.node.split(".").map(Number);
+			check(major > 22 || (major === 22 && minor >= 19) ? "ok" : "fail", "node", process.version);
+			const zsh = spawnSync("zsh", ["--version"], { encoding: "utf8" });
+			check(zsh.status === 0 ? "ok" : "fail", "zsh", zsh.status === 0 ? zsh.stdout.trim() : "not found");
+			try {
+				const pi = resolvePiBinary();
+				const version = spawnSync(pi, ["--version"], { encoding: "utf8", env: process.env });
+				check(version.status === 0 ? "ok" : "fail", "pi", version.status === 0 ? `${pi} (${version.stdout.trim()})` : `${pi} did not start`);
+			} catch (error) {
+				check("fail", "pi", error instanceof Error ? error.message : String(error));
+			}
+			const config = await readConfig();
+			check(config.provider ? "ok" : "warn", "provider", config.provider ?? "not configured; Pi default applies");
+			check(config.model ? "ok" : "warn", "model", config.model ?? "not configured; Pi default applies");
+			const credentialVariables: Record<string, string> = {
+				deepseek: "DEEPSEEK_API_KEY",
+				openai: "OPENAI_API_KEY",
+				anthropic: "ANTHROPIC_API_KEY",
+				google: "GEMINI_API_KEY",
+			};
+			if (config.provider && credentialVariables[config.provider]) {
+				const variable = credentialVariables[config.provider];
+				check(process.env[variable] ? "ok" : "warn", "credential", process.env[variable] ? `${variable} is set in this process` : `${variable} is not set in this process`);
+			} else {
+				check("warn", "credential", "provider-specific environment was not checked");
+			}
+			try {
+				await client.ping();
+				check("ok", "intentd", process.env.INTENTD_SOCKET ?? defaultSocketPath());
+			} catch {
+				check("warn", "intentd", "not reachable; native commands and direct agent requests still work");
+			}
+			if (failures) process.exitCode = 1;
+			return;
+		}
 		case "risk": {
 			const assessment = assessRisk(args.join(" "));
 			console.log([assessment.level, assessment.rule, assessment.reason].join("\t"));
@@ -387,7 +456,7 @@ async function run(command = "help", rawArgs: string[]): Promise<void> {
 			console.log(JSON.stringify(await client.retry(args[0]), null, 2));
 			return;
 		default:
-			console.log("ishctl commands: risk, route, ask, panes, broadcast, context, capsules, action, action-dispatch, actions, action-show, ping, submit, list, show, logs, cancel, retry");
+			console.log("ishctl commands: config, doctor, risk, route, ask, panes, broadcast, context, capsules, action, action-dispatch, actions, action-show, ping, submit, list, show, logs, cancel, retry");
 	}
 }
 
