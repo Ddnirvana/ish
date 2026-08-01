@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+
+.env
+.env.*
+!.env.example
+
+*.log
+*.pid
+*.sock
+*.tmp
+.DS_Store
+
+.ish-state/
+evaluation.json
