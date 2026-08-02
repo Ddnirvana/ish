@@ -39,9 +39,10 @@ ls -la                         # native zsh; no model call
 
 ## Install
 
-The evaluated target is a single-user Linux server with Node.js 22.19+, zsh
-5.8+, and a systemd user manager. tmux 3.2+ enables topology selectors and the
-multi-shell demo.
+ish supports single-user Linux servers and macOS hosts with Node.js 22.19+ and
+zsh 5.8+. Linux service management uses a systemd user unit; macOS uses a
+per-user LaunchAgent. tmux 3.2+ enables topology selectors and the multi-shell
+demo.
 
 ```bash
 ./scripts/install.sh
@@ -50,9 +51,10 @@ ish
 ```
 
 The installer uses the locked npm graph, installs under `~/.local` by default,
-and enables `ish-intentd.service` when a systemd user manager is available. Use
-`ISH_PREFIX=/another/prefix` to select another prefix or `--no-service` to skip
-service setup. It does not edit `.zshrc`, `/etc/shells`, or the login shell.
+and starts `intentd` through the host's user service manager when one is
+available. Use `ISH_PREFIX=/another/prefix` to select another prefix or
+`--no-service` to skip service setup. It does not use sudo or edit `.zshrc`,
+`/etc/shells`, or the login shell.
 
 Run the installer again to upgrade atomically. Uninstall with:
 
@@ -85,9 +87,24 @@ ish doctor
 ```
 
 Direct `?` requests inherit the current shell environment. Durable Pi jobs
-inherit the environment of `intentd`; for a temporary systemd-manager
-environment, use `systemctl --user import-environment` deliberately and remove
-it when finished. Never place credentials in the unit file.
+inherit the environment of `intentd`. On Linux, deliberately import a temporary
+credential into the systemd user manager before restarting the service:
+
+```zsh
+systemctl --user import-environment DEEPSEEK_API_KEY
+ish service restart
+```
+
+On macOS, put it only in the current launchd user environment, then restart:
+
+```zsh
+launchctl setenv DEEPSEEK_API_KEY "$DEEPSEEK_API_KEY"
+ish service restart
+```
+
+Remove it with `systemctl --user unset-environment DEEPSEEK_API_KEY` or
+`launchctl unsetenv DEEPSEEK_API_KEY` when finished. Never place a credential
+in a unit, plist, shell startup file, or Git repository.
 
 ## Use
 
@@ -171,9 +188,12 @@ ish service stop
 ish service start
 ```
 
-The unit is user-scoped, starts with the login session, restarts on failure, and
-contains no provider credential. Native commands and direct agent requests keep
-working when `intentd` is stopped; durable jobs, context, and capsules do not.
+The systemd unit or macOS LaunchAgent is user-scoped, starts with the login
+session, restarts on failure, and contains no provider credential. On Linux,
+`logs` follows the user journal; on macOS, it follows
+`~/.local/state/ish/logs/intentd*.log`. Native commands and direct agent
+requests keep working when `intentd` is stopped; durable jobs, context, and
+capsules do not.
 
 ## Make ish the login shell
 
@@ -214,7 +234,7 @@ npm run demo
 The suite covers deterministic routing, terminal formatting, real zsh ZLE,
 approval cancellation/execution, capsule races, restart recovery, context,
 durable jobs, real isolated tmux panes, configuration, launcher compatibility,
-systemd unit lifecycle, and disposable-prefix install/upgrade/uninstall.
+systemd and launchd lifecycle, and disposable-prefix install/upgrade/uninstall.
 The post-install step also verifies and applies the temporary Pi dependency
 hardening documented in `SECURITY.md`.
 
@@ -231,11 +251,11 @@ never needs a credential.
 
 ## Current scope
 
-ish currently targets one trusted user on one Linux host. The risk classifier
-is not complete effect inference, external effects are not transactional,
-uncertain operations are not automatically retried, and multi-user or fleet
-authorization is not implemented. Engineering readiness does not establish
-product demand or research novelty.
+ish currently targets one trusted user on one Linux or macOS host. The risk
+classifier is not complete effect inference, external effects are not
+transactional, uncertain operations are not automatically retried, and
+multi-user or fleet authorization is not implemented. Engineering readiness
+does not establish product demand or research novelty.
 
 ## Acknowledgments
 

@@ -41,7 +41,13 @@ ln -sfn "$libdir/bin/ish" "$bindir/ish"
 ln -sfn "$libdir/bin/intentd" "$bindir/intentd"
 ln -sfn "$libdir/bin/ishctl" "$bindir/ishctl"
 
-if (( install_service )) && [[ "$(uname -s)" == Linux ]] && command -v systemctl >/dev/null 2>&1; then
+service_available=0
+case "${ISH_SERVICE_PLATFORM:-$(uname -s)}" in
+  Linux) command -v "${ISH_SYSTEMCTL:-systemctl}" >/dev/null 2>&1 && service_available=1 ;;
+  Darwin) command -v "${ISH_LAUNCHCTL:-launchctl}" >/dev/null 2>&1 && service_available=1 ;;
+esac
+
+if (( install_service && service_available )); then
   if ! "$bindir/ish" service install; then
     echo "warning: ish installed, but the user service could not start; retry with: ish service install" >&2
   fi

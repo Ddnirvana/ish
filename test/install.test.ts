@@ -39,7 +39,30 @@ exit 0
 `,
 	);
 	await chmod(fakeNpm, 0o755);
-	const env = { ...process.env, ISH_PREFIX: prefix, PATH: `${fakeBin}:${process.env.PATH}` };
+	const launchctl = path.join(fakeBin, "launchctl");
+	const launchdState = path.join(root, "launchd-loaded");
+	await writeFile(
+		launchctl,
+		`#!/bin/sh
+case "$1" in
+  print) test -f "${launchdState}" ;;
+  bootstrap) touch "${launchdState}" ;;
+  bootout) rm -f "${launchdState}" ;;
+esac
+`,
+	);
+	await chmod(launchctl, 0o755);
+	const agentDir = path.join(root, "LaunchAgents");
+	const env = {
+		...process.env,
+		ISH_PREFIX: prefix,
+		ISH_SERVICE_PLATFORM: "Darwin",
+		ISH_LAUNCHCTL: launchctl,
+		ISH_SERVICE_UID: "501",
+		ISH_LAUNCH_AGENT_DIR: agentDir,
+		ISH_SERVICE_LOG_DIR: path.join(root, "logs"),
+		PATH: `${fakeBin}:${process.env.PATH}`,
+	};
 	for (let iteration = 0; iteration < 2; iteration += 1) {
 		const result = spawnSync(install, ["--no-service"], { encoding: "utf8", env });
 		assert.equal(result.status, 0, result.stderr);
@@ -62,10 +85,15 @@ exit 0
 	let result = spawnSync(path.join(prefix, "bin", "ish"), ["--version"], { encoding: "utf8", env });
 	assert.equal(result.status, 0, result.stderr);
 	assert.equal(result.stdout.trim(), "ish 0.1.0");
+	result = spawnSync(install, [], { encoding: "utf8", env });
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /ish intent service installed and started/);
+	assert.equal(await exists(path.join(agentDir, "com.ish.intentd.plist")), true);
 	for (let iteration = 0; iteration < 2; iteration += 1) {
 		result = spawnSync(uninstall, [], { encoding: "utf8", env });
 		assert.equal(result.status, 0, result.stderr);
 	}
 	assert.equal(await exists(path.join(prefix, "lib", "ish")), false);
 	assert.equal(await exists(path.join(prefix, "bin", "ish")), false);
+	assert.equal(await exists(path.join(agentDir, "com.ish.intentd.plist")), false);
 });
