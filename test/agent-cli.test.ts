@@ -65,6 +65,35 @@ test("agent CLI loads a stored provider key without displaying it", async (t) =>
 	assert.doesNotMatch(result.stdout + result.stderr, /test-key-not-secret/);
 });
 
+test("agent CLI supplies bounded native transcript context to Pi", async (t) => {
+	chmodSync(fakePi, 0o755);
+	const root = await mkdtemp(path.join(os.tmpdir(), "ish-agent-transcript-"));
+	const events = path.join(root, "events.jsonl");
+	t.after(() => rm(root, { recursive: true, force: true }));
+	await writeFile(events, `${JSON.stringify({
+		version: 1,
+		id: "native-1",
+		timestamp: new Date().toISOString(),
+		command: "dmesg",
+		cwd: "/srv",
+		exitCode: 0,
+		durationMs: 8,
+		output: "kernel health sentinel",
+		outputBytes: 22,
+		truncated: false,
+		provenance: "ish-pty-visible-output",
+	})}\n`);
+	const result = spawnSync(process.execPath, [cli, "ask", "--", "analyze the above log"], {
+		encoding: "utf8",
+		env: { ...process.env, ISH_PI: fakePi, ISH_TRANSCRIPT_EVENTS: events, NO_COLOR: "1", ISH_ASCII: "1" },
+	});
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /ish-native-context/);
+	assert.match(result.stdout, /command: dmesg/);
+	assert.match(result.stdout, /kernel health sentinel/);
+	assert.match(result.stdout, /untrusted-observation/);
+});
+
 test("leading question routing stays invisible in a real zsh editor", async (t) => {
 	const hasTmux = spawnSync("tmux", ["-V"], { stdio: "ignore" }).status === 0;
 	if (!hasTmux) return t.skip("tmux is unavailable");

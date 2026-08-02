@@ -55,3 +55,19 @@ in Pi's official [provider guide](https://pi.dev/docs/latest/providers) and
 | intentd socket | `$XDG_RUNTIME_DIR/ish/intentd.sock` or `/tmp/ish-intentd-UID.sock` | `INTENTD_SOCKET` |
 | zsh executable | `zsh` from `PATH` | `ISH_ZSH` |
 | Node executable used by ish | compatible runtime selected during install | `ISH_NODE` |
+
+## Native Output Context
+
+Interactive ish keeps an ephemeral, user-only ring containing at most 12 native
+command records and supplies the newest three to `?` requests. Each command's
+visible output is limited to a 24 KiB tail; the complete prompt context is
+limited to 32 KiB and marks truncated captures. Command, cwd, exit status, and
+timing are included so Pi can analyze evidence such as a preceding `dmesg`.
+
+The ring is removed when the shell exits. Credential-like commands are excluded
+by a conservative name filter, but this is not a secret scanner: disable the
+feature before commands that may print sensitive data.
+
+```bash
+ISH_TRANSCRIPT_CAPTURE=0 ish
+```

@@ -99,7 +99,16 @@ Use `?` or `/ask` for intentional requests:
 ```text
 ? summarize the five largest files in this directory
 ? explain the failed deployment and cite the evidence
+sudo dmesg
+? analyze the kernel log above and identify unhealthy events
 ```
+
+In an interactive ish session, Pi receives a bounded view of the three most
+recent native commands: visible output, exit status, timing, working directory,
+and capture completeness. The view is ephemeral and removed when that shell
+exits. Credential-like commands are excluded; set `ISH_TRANSCRIPT_CAPTURE=0`
+before starting ish to disable capture. While Pi is silent, a changing-color
+working indicator remains active and clears when output begins.
 
 Pi starts with read-only tools, including ish's bounded `system_inspect` tool.
 Commands recognized as destructive pause in the shell editor:

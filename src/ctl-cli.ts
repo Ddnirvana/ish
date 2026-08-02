@@ -11,7 +11,8 @@ import { defaultSocketPath, defaultStateDir } from "./paths.js";
 import { assessRisk } from "./risk.js";
 import { TmuxTopology, type BroadcastPlan, type TmuxPane } from "./tmux.js";
 import type { IntentRecord } from "./types.js";
-import { ISH_SYSTEM_PROMPT, renderAgentEnd, renderAgentStart, renderFailure } from "./ui.js";
+import { ISH_SYSTEM_PROMPT, renderAgentActivityFrame, renderAgentEnd, renderAgentStart, renderFailure } from "./ui.js";
+import { formatNativeContext, readNativeTranscriptsWhenReady } from "./transcript.js";
 import { cwdToken, type ActionRecord, type ActionTargetState, type EffectClass } from "./capsules.js";
 import { defaultConfigPath, readConfig, updateConfig, type IshConfigKey } from "./config.js";
 import {
@@ -93,8 +94,29 @@ async function runPi(prompt: string): Promise<void> {
 	const config = await readConfig();
 	const sessionDir = process.env.ISH_PI_SESSION_DIR ?? path.join(defaultStateDir(), "pi-sessions");
 	const extension = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "pi-extension.js");
+	const nativeContext = formatNativeContext(await readNativeTranscriptsWhenReady());
+	const effectivePrompt = nativeContext ? `${prompt}\n\n${nativeContext}` : prompt;
 	const started = Date.now();
 	process.stdout.write(renderAgentStart(prompt));
+	const animated = Boolean(process.stdout.isTTY && process.env.ISH_TUI === "1" && process.env.TERM !== "dumb");
+	let activityFrame = 0;
+	let activityTimer: NodeJS.Timeout | undefined;
+	let activityVisible = false;
+	const drawActivity = () => {
+		activityVisible = true;
+		process.stdout.write(`${animated ? "\r\u001b[2K" : ""}${renderAgentActivityFrame(activityFrame++)}${animated ? "" : "\n"}`);
+	};
+	const stopActivity = () => {
+		if (activityTimer) clearInterval(activityTimer);
+		activityTimer = undefined;
+		if (animated && activityVisible) process.stdout.write("\r\u001b[2K");
+		activityVisible = false;
+	};
+	drawActivity();
+	if (animated) {
+		activityTimer = setInterval(drawActivity, 120);
+		activityTimer.unref();
+	}
 	const piArgs = [
 		"--session-dir",
 		sessionDir,
@@ -110,18 +132,41 @@ async function runPi(prompt: string): Promise<void> {
 		"--tools",
 		process.env.ISH_PI_TOOLS ?? "read,grep,find,ls,system_inspect",
 		"-p",
-		prompt,
+		effectivePrompt,
 	);
 	const child = spawn(binary, piArgs, {
 		cwd: process.cwd(),
 		env: await piEnvironment(config),
-		stdio: "inherit",
+		stdio: ["inherit", "pipe", "pipe"],
 	});
+	let outputStarted = false;
+	const forward = (chunk: Buffer | string, destination: NodeJS.WriteStream) => {
+		if (!outputStarted) {
+			outputStarted = true;
+			stopActivity();
+		}
+		destination.write(chunk);
+	};
+	child.stdout.on("data", (chunk) => forward(chunk, process.stdout));
+	child.stderr.on("data", (chunk) => forward(chunk, process.stderr));
+	const interrupt = (signal: NodeJS.Signals) => {
+		stopActivity();
+		child.kill(signal);
+	};
+	const interruptOnSigint = () => interrupt("SIGINT");
+	const interruptOnSigterm = () => interrupt("SIGTERM");
+	process.once("SIGINT", interruptOnSigint);
+	process.once("SIGTERM", interruptOnSigterm);
 	const exitCode = await new Promise<number>((resolve, reject) => {
 		child.once("error", () => {
+			stopActivity();
 			reject(new Error(`Pi could not start from ${binary}. Run \`ish doctor\` or correct ISH_PI.`));
 		});
 		child.once("close", (code) => resolve(code ?? 1));
+	}).finally(() => {
+		stopActivity();
+		process.off("SIGINT", interruptOnSigint);
+		process.off("SIGTERM", interruptOnSigterm);
 	});
 	if (exitCode !== 0) throw new Error(`${binary} exited with code ${exitCode}`);
 	process.stdout.write(renderAgentEnd(Date.now() - started));

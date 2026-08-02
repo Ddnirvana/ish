@@ -28,6 +28,8 @@ typeset -g _ISH_ACTIVE_COMMAND=""
 typeset -g _ISH_PENDING_AGENT=""
 typeset -g _ISH_PENDING_CONTROL=""
 typeset -gi _ISH_RESTORE_HIST_IGNORE_SPACE=0
+typeset -g _ISH_TRANSCRIPT_ID=""
+typeset -gi _ISH_TRANSCRIPT_SEQ=0
 typeset -gA _ISH_SEEN_ACTIONS
 
 _ish_async_ctl() {
@@ -129,6 +131,30 @@ _ish_report_action_sync() {
 }
 
 _ish_preexec() {
+	local command_line="${1:-}"
+	if [[ -n "${ISH_TRANSCRIPT_META_DIR:-}" && "${ISH_TRANSCRIPT_CAPTURE:-1}" != 0 &&
+	      -z "$_ISH_PENDING_AGENT" && -z "$_ISH_PENDING_CONTROL" ]]; then
+		local lowered="${command_line:l}"
+		if [[ "$lowered" != *api_key* && "$lowered" != *api-key* &&
+		      "$lowered" != *access_token* && "$lowered" != *access-token* &&
+		      "$lowered" != *password* && "$lowered" != *passwd* &&
+		      "$lowered" != *credential* && "$lowered" != *private_key* && "$lowered" != *private-key* &&
+		      "$lowered" != *id_rsa* && "$lowered" != *ish\ config\ set\ key* &&
+		      "$lowered" != *sudo\ -S* ]]; then
+			(( _ISH_TRANSCRIPT_SEQ += 1 ))
+			_ISH_TRANSCRIPT_ID="${$}-${_ISH_TRANSCRIPT_SEQ}"
+			export ISH_TRANSCRIPT_EXPECT_ID="$_ISH_TRANSCRIPT_ID"
+			export ISH_TRANSCRIPT_STATUS=active
+			print -rn -- "$command_line" >"$ISH_TRANSCRIPT_META_DIR/${_ISH_TRANSCRIPT_ID}.command"
+			print -rn -- "$PWD" >"$ISH_TRANSCRIPT_META_DIR/${_ISH_TRANSCRIPT_ID}.cwd"
+			print -rn -- "${EPOCHREALTIME:-0}" >"$ISH_TRANSCRIPT_META_DIR/${_ISH_TRANSCRIPT_ID}.started"
+			command chmod 600 -- "$ISH_TRANSCRIPT_META_DIR/${_ISH_TRANSCRIPT_ID}."{command,cwd,started} 2>/dev/null || true
+			print -rn -- $'\e]777;ish;start;'"$_ISH_TRANSCRIPT_ID"$'\a'
+		else
+			export ISH_TRANSCRIPT_EXPECT_ID=""
+			export ISH_TRANSCRIPT_STATUS=excluded-sensitive-command
+		fi
+	fi
   [[ -n "$_ISH_CAPSULE_ID" ]] || return 0
   _ish_async_ctl capsule-update --id "$_ISH_CAPSULE_ID" --generation "$_ISH_GENERATION" --cwd "$PWD" --mode running --line-editor inactive
   if [[ -n "$_ISH_ACTIVE_ACTION" ]]; then
@@ -138,6 +164,10 @@ _ish_preexec() {
 
 _ish_precmd() {
   local previous_status=$?
+	if [[ -n "$_ISH_TRANSCRIPT_ID" ]]; then
+		print -rn -- $'\e]777;ish;end;'"$_ISH_TRANSCRIPT_ID"";$previous_status"$'\a'
+		_ISH_TRANSCRIPT_ID=""
+	fi
   if [[ -n "$_ISH_PENDING_AGENT" ]]; then
     local prompt="$_ISH_PENDING_AGENT"
     _ISH_PENDING_AGENT=""
@@ -405,6 +435,7 @@ _ish_setup_prompt() {
 
 if [[ -o interactive ]]; then
   setopt prompt_subst
+  zmodload zsh/datetime 2>/dev/null || true
   autoload -Uz add-zsh-hook
   add-zsh-hook preexec _ish_preexec
   add-zsh-hook precmd _ish_precmd
