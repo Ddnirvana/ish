@@ -78,7 +78,7 @@ Credentials are deliberately not accepted by `ish config`. Inject them into
 the shell process without putting the value in history or a project file:
 
 ```zsh
-read -rs 'API key: ' ISH_SECRET; print
+read -rs 'ISH_SECRET?API key: '; print
 export DEEPSEEK_API_KEY="$ISH_SECRET"
 unset ISH_SECRET
 ish doctor

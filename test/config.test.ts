@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -18,4 +19,14 @@ test("configuration persists provider and model without accepting secrets", asyn
 	await assert.rejects(() => updateConfig("provider", "deepseek; export KEY=value", file));
 	await updateConfig("model", undefined, file);
 	assert.deepEqual(await readConfig(file), { provider: "deepseek" });
+});
+
+test("documented zsh credential prompt reads the value from hidden stdin", () => {
+	const result = spawnSync(
+		"zsh",
+		["-c", "read -rs 'ISH_SECRET?API key: '; print; print -r -- set:${#ISH_SECRET}"],
+		{ encoding: "utf8", input: "example-secret\n" },
+	);
+	assert.equal(result.status, 0, result.stderr);
+	assert.equal(result.stdout, "\nset:14\n");
 });

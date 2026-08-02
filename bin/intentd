@@ -10,4 +10,8 @@ while [ -L "$self" ]; do
   esac
 done
 root=$(CDPATH= cd -- "$(dirname "$self")/.." && pwd)
+if [ -z "${INTENTD_PI:-}" ] && [ -x "$root/node_modules/.bin/pi" ]; then
+  INTENTD_PI="$root/node_modules/.bin/pi"
+  export INTENTD_PI
+fi
 exec node "$root/dist/src/daemon-cli.js" "$@"
