@@ -7,6 +7,7 @@ libdir="$prefix/lib/ish"
 bindir="$prefix/bin"
 install_service=1
 install_deps=0
+platform="${ISH_INSTALL_PLATFORM:-$(uname -s)}"
 for argument in "$@"; do
   case "$argument" in
     --no-service) install_service=0 ;;
@@ -18,19 +19,64 @@ for argument in "$@"; do
   esac
 done
 
-command -v node >/dev/null 2>&1 || {
-  echo "ish requires Node.js 22.19 or newer; install Node.js, then rerun this installer" >&2
-  exit 1
+node_is_supported() {
+  [[ -x "$1" ]] &&
+    [[ "$("$1" -p 'const [a,b]=process.versions.node.split(".").map(Number); Number(a>22 || (a===22 && b>=19))' 2>/dev/null)" == 1 ]]
 }
-command -v npm >/dev/null 2>&1 || {
-  echo "ish requires npm from a Node.js 22.19+ installation" >&2
-  exit 1
+
+resolve_node() {
+  local candidate
+  local -a candidates=()
+  if [[ -n "${ISH_NODE:-}" ]]; then
+    candidates+=("$ISH_NODE")
+  else
+    command -v node >/dev/null 2>&1 && candidates+=("$(command -v node)")
+    shopt -s nullglob
+    candidates+=(
+      "$HOME"/.local/bin/node
+      "$HOME"/.local/node-v*/bin/node
+      "$HOME"/.local/share/fnm/node-versions/v*/installation/bin/node
+      "$HOME"/.nvm/versions/node/v*/bin/node
+      "$HOME"/.volta/bin/node
+      "$HOME"/toolchain/node-v*/bin/node
+      "$HOME"/*/toolchain/node-v*/bin/node
+    )
+    [[ "$platform" != Darwin ]] || candidates+=(/opt/homebrew/bin/node)
+    shopt -u nullglob
+  fi
+  for candidate in "${candidates[@]}"; do
+    if node_is_supported "$candidate"; then
+      (cd "$(dirname "$candidate")" && printf '%s/%s\n' "$PWD" "$(basename "$candidate")")
+      return 0
+    fi
+  done
+  return 1
 }
-node_supported="$(node -p 'const [a,b]=process.versions.node.split(".").map(Number); Number(a>22 || (a===22 && b>=19))')"
-if [[ "$node_supported" != 1 ]]; then
-  echo "ish requires Node.js 22.19 or newer; found $(node --version)" >&2
+
+if ! node_bin="$(resolve_node)"; then
+  detected_node="$(command -v node 2>/dev/null || true)"
+  detected_version="not found"
+  [[ -z "$detected_node" ]] || detected_version="$($detected_node --version 2>/dev/null || printf 'unusable')"
+  echo "ish installation stopped: Node.js 22.19 or newer is required; PATH resolves ${detected_node:-node} to $detected_version" >&2
+  echo "Nothing was installed." >&2
+  echo "Install Node.js 22 LTS, or point to an existing installation:" >&2
+  echo "  ISH_NODE=/absolute/path/to/node ./scripts/install.sh" >&2
   exit 1
 fi
+
+node_dir="$(dirname "$node_bin")"
+export PATH="$node_dir:$PATH"
+npm_bin="${ISH_NPM:-$node_dir/npm}"
+if [[ ! -x "$npm_bin" ]]; then
+  npm_bin="$(command -v npm 2>/dev/null || true)"
+fi
+if [[ -z "$npm_bin" ]] || ! npm_version="$($npm_bin --version 2>/dev/null)"; then
+  echo "ish installation stopped: npm from the selected Node.js installation is unavailable" >&2
+  echo "Selected Node.js: $node_bin ($($node_bin --version))" >&2
+  echo "Nothing was installed. Install npm or set ISH_NPM=/absolute/path/to/npm, then rerun." >&2
+  exit 1
+fi
+echo "using Node $($node_bin --version) from $node_bin with npm $npm_version"
 
 version_at_least() {
   awk -v have="$1" -v need="$2" 'BEGIN {
@@ -44,7 +90,6 @@ version_at_least() {
 }
 
 install_zsh() {
-  platform="${ISH_INSTALL_PLATFORM:-$(uname -s)}"
   case "$platform" in
     Darwin)
       brew_bin="${ISH_BREW:-brew}"
@@ -105,9 +150,9 @@ if ! version_at_least "$zsh_version" 5.8; then
 fi
 
 cd "$root"
-npm ci --ignore-scripts --no-audit
+"$npm_bin" ci --ignore-scripts --no-audit
 bash scripts/harden-dependencies.sh
-npm run build
+"$npm_bin" run build
 
 mkdir -p "$(dirname "$libdir")" "$bindir"
 stage="$libdir.stage.$$"
@@ -116,9 +161,11 @@ rm -rf "$stage"
 mkdir -p "$stage"
 cp -R bin dist docs shell scripts vendor "$stage/"
 cp package.json package-lock.json README.md SECURITY.md LICENSE "$stage/"
+mkdir -p "$stage/runtime"
+ln -s "$node_bin" "$stage/runtime/node"
 (
   cd "$stage"
-  npm ci --omit=dev --ignore-scripts --no-audit
+  "$npm_bin" ci --omit=dev --ignore-scripts --no-audit
   bash scripts/harden-dependencies.sh
 	pi_version="$(node -p 'require("./node_modules/@earendil-works/pi-coding-agent/package.json").version')"
 	[[ "$pi_version" == 0.83.0 ]] || {
@@ -155,7 +202,7 @@ else
 fi
 
 echo "installed ish under $prefix"
-echo "ready: Node $(node --version), zsh $zsh_version, bundled Pi 0.83.0"
+echo "ready: Node $($node_bin --version), zsh $zsh_version, bundled Pi 0.83.0"
 echo "run: $bindir/ish doctor"
 echo "start a shell: $bindir/ish"
 echo "default-shell instructions: $bindir/ish default-shell"

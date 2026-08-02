@@ -54,3 +54,4 @@ in Pi's official [provider guide](https://pi.dev/docs/latest/providers) and
 | Jobs, context, sessions | `~/.local/state/ish/` | `XDG_STATE_HOME` |
 | intentd socket | `$XDG_RUNTIME_DIR/ish/intentd.sock` or `/tmp/ish-intentd-UID.sock` | `INTENTD_SOCKET` |
 | zsh executable | `zsh` from `PATH` | `ISH_ZSH` |
+| Node executable used by ish | compatible runtime selected during install | `ISH_NODE` |

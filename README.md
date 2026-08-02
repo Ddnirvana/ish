@@ -24,18 +24,27 @@ ls -la                         # native zsh
 ## Install
 
 ish supports macOS and Linux. It requires Node.js 22.19+ and zsh 5.8+. The
-installer checks both before changing anything. If zsh is missing, rerun with
+installer checks both before changing anything. It can find compatible Node.js
+installations managed by common user-level tools or toolchain directories even
+when the system `node` is old; use `ISH_NODE=/absolute/path/to/node` for another
+location. If no compatible Node.js exists, the installer stops with `Nothing
+was installed` and a recovery command. If zsh is missing, rerun with
 `--install-deps`; this explicitly allows the installer to use Homebrew, apt,
-dnf, or pacman. No separate Pi installation is needed: ish installs and uses its
-own pinned Pi 0.83.0 runtime without modifying a global Pi installation.
+dnf, or pacman. No separate Pi installation is needed: ish installs and uses
+its own pinned Pi 0.83.0 runtime without modifying a global Pi installation.
 
 ```bash
 git clone https://github.com/Ddnirvana/ish.git
-cd ish
-./scripts/install.sh
-export PATH="$HOME/.local/bin:$PATH"
+cd ish &&
+./scripts/install.sh &&
+export PATH="$HOME/.local/bin:$PATH" &&
+hash -r &&
 ish doctor
 ```
+
+The `&&` sequence stops immediately if a prerequisite or installation step
+fails. Do not continue to `ish doctor` unless the installer prints
+`installed ish under ...`.
 
 The default prefix is `~/.local`. Use `ISH_PREFIX=/path` to choose another or
 `--no-service` to skip intentd service setup. Running the installer again

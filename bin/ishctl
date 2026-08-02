@@ -10,4 +10,8 @@ while [ -L "$self" ]; do
   esac
 done
 root=$(CDPATH= cd -- "$(dirname "$self")/.." && pwd)
-exec node "$root/dist/src/ctl-cli.js" "$@"
+node_command=${ISH_NODE:-$root/runtime/node}
+[ -x "$node_command" ] || node_command=node
+PATH=$(dirname "$node_command"):$PATH
+export PATH
+exec "$node_command" "$root/dist/src/ctl-cli.js" "$@"

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { access, chmod, cp, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
+import { access, chmod, cp, mkdir, mkdtemp, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -31,6 +31,9 @@ test("install, upgrade, launcher, and uninstall are idempotent in a disposable p
 	const fakeBin = path.join(root, "bin");
 	await mkdir(fakeBin);
 	const fakeNpm = path.join(fakeBin, "npm");
+	const oldNode = path.join(fakeBin, "node");
+	await writeFile(oldNode, "#!/bin/sh\n[ \"$1\" = --version ] && echo v12.22.9 || echo 0\n");
+	await chmod(oldNode, 0o755);
 	await writeFile(
 		fakeNpm,
 		`#!/bin/sh
@@ -42,7 +45,7 @@ if [ "$1" = ci ]; then
     *.stage.*)
       mkdir -p "$PWD/node_modules/@earendil-works/pi-coding-agent" "$PWD/node_modules/.bin"
       printf '%s\n' '{"version":"0.83.0"}' > "$PWD/node_modules/@earendil-works/pi-coding-agent/package.json"
-      printf '%s\n' '#!/bin/sh' 'echo pi 0.83.0' > "$PWD/node_modules/.bin/pi"
+      printf '%s\n' '#!/bin/sh' 'test "$(node --version)" != v12.22.9' 'echo pi 0.83.0' > "$PWD/node_modules/.bin/pi"
       chmod 755 "$PWD/node_modules/.bin/pi"
       ;;
   esac
@@ -81,7 +84,9 @@ esac
 		ISH_PREFIX: prefix,
 		ISH_SERVICE_PLATFORM: "Darwin",
 		ISH_INSTALL_PLATFORM: "Darwin",
+		ISH_NODE: process.execPath,
 		ISH_ZSH: fakeZsh,
+		ISH_NPM: fakeNpm,
 		ISH_BREW: fakeBrew,
 		ISH_LAUNCHCTL: launchctl,
 		ISH_SERVICE_UID: "501",
@@ -112,6 +117,9 @@ esac
 		"installed prefix must include the compiled system_inspect extension",
 	);
 	assert.equal(await exists(path.join(prefix, "lib", "ish", "docs", "getting-started.md")), true);
+	const installedNode = await readlink(path.join(prefix, "lib", "ish", "runtime", "node"));
+	assert.equal(path.isAbsolute(installedNode), true);
+	assert.equal(await exists(installedNode), true);
 	const hardened = JSON.parse(
 		await readFile(path.join(prefix, "lib", "ish", "node_modules", "@earendil-works", "pi-coding-agent", "node_modules", "brace-expansion", "package.json"), "utf8"),
 	) as { version: string };
@@ -119,6 +127,10 @@ esac
 	result = spawnSync(path.join(prefix, "bin", "ish"), ["--version"], { encoding: "utf8", env });
 	assert.equal(result.status, 0, result.stderr);
 	assert.equal(result.stdout.trim(), "ish 0.1.0");
+	result = spawnSync(path.join(prefix, "bin", "ish"), ["doctor"], { encoding: "utf8", env });
+	assert.equal(result.status, 0, result.stdout + result.stderr);
+	assert.match(result.stdout, /\[ok\] node:/);
+	assert.match(result.stdout, /\[ok\] pi:/);
 	result = spawnSync(install, [], { encoding: "utf8", env });
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.stdout, /ish intent service installed and started/);
@@ -130,4 +142,61 @@ esac
 	assert.equal(await exists(path.join(prefix, "lib", "ish")), false);
 	assert.equal(await exists(path.join(prefix, "bin", "ish")), false);
 	assert.equal(await exists(path.join(agentDir, "com.ish.intentd.plist")), false);
+});
+
+test("installer finds a compatible user toolchain Node behind an old system Node", async (t) => {
+	const root = await mkdtemp(path.join(os.tmpdir(), "ish-node-resolution-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const checkout = path.join(root, "source");
+	await cp(sourceRoot, checkout, {
+		recursive: true,
+		filter: (source) => ![".git", "node_modules"].includes(path.basename(source)),
+	});
+	const install = path.join(checkout, "scripts", "install.sh");
+	const fakeBin = path.join(root, "bin");
+	await mkdir(fakeBin);
+	const oldNode = path.join(fakeBin, "node");
+	await writeFile(
+		oldNode,
+		`#!/bin/sh
+if [ "$1" = --version ]; then echo v12.22.9; else echo 0; fi
+`,
+	);
+	await chmod(oldNode, 0o755);
+	const fakeZsh = path.join(fakeBin, "zsh");
+	await writeFile(fakeZsh, "#!/bin/sh\necho zsh 5.9\n");
+	await chmod(fakeZsh, 0o755);
+	const npmLog = path.join(root, "npm.log");
+	const compatibleBin = path.join(root, "existing-project", "toolchain", "node-v22.19.0-linux-x64", "bin");
+	const compatibleNode = path.join(compatibleBin, "node");
+	const compatibleNpm = path.join(compatibleBin, "npm");
+	const env = {
+		...process.env,
+		HOME: root,
+		ISH_INSTALL_PLATFORM: "Linux",
+		ISH_ZSH: fakeZsh,
+		PATH: `${fakeBin}:/usr/bin:/bin`,
+	};
+
+	let result = spawnSync(install, ["--no-service"], { encoding: "utf8", env });
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /v12\.22\.9/);
+	assert.match(result.stderr, /Nothing was installed/);
+	assert.match(result.stderr, /ISH_NODE=\/absolute\/path\/to\/node/);
+
+	await mkdir(compatibleBin, { recursive: true });
+	await symlink(process.execPath, compatibleNode);
+	await writeFile(
+		compatibleNpm,
+		`#!/bin/sh
+if [ "$1" = --version ]; then echo 10.9.3; exit 0; fi
+printf '%s\n' "$*" >> "${npmLog}"
+exit 73
+`,
+	);
+	await chmod(compatibleNpm, 0o755);
+	result = spawnSync(install, ["--no-service"], { encoding: "utf8", env });
+	assert.equal(result.status, 73);
+	assert.match(result.stdout, new RegExp(`using Node .* from ${compatibleNode.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+	assert.match(await readFile(npmLog, "utf8"), /^ci --ignore-scripts --no-audit/m);
 });

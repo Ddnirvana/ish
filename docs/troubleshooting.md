@@ -19,6 +19,18 @@ or explicitly allow the installer to use it:
 ./scripts/install.sh --install-deps
 ```
 
+If `PATH` selects an old system Node while a compatible user-local installation
+already exists, the installer normally discovers it. You can select it
+explicitly:
+
+```bash
+ISH_NODE=/absolute/path/to/node ./scripts/install.sh
+```
+
+When the installer prints `Nothing was installed`, `ish` is intentionally not
+created. Fix the reported prerequisite and rerun until the installer prints
+`installed ish under ...`; only then run `ish doctor`.
+
 ## Pi Is Unavailable
 
 Rerun the installer to restore ish's pinned Pi runtime:

@@ -14,12 +14,29 @@ is not required or modified.
 
 ```bash
 git clone https://github.com/Ddnirvana/ish.git
-cd ish
-./scripts/install.sh
-export PATH="$HOME/.local/bin:$PATH"
-ish doctor
+cd ish &&
+./scripts/install.sh &&
+export PATH="$HOME/.local/bin:$PATH" &&
+hash -r &&
+ish doctor &&
 ish
 ```
+
+The chained commands stop if installation fails. A successful installer always
+prints `installed ish under ...`; if that line is absent, follow the preceding
+error and rerun the installer before using `ish`.
+
+If the system `node` is old, ish also checks common user-local Node managers and
+toolchain directories. Select another compatible installation explicitly when
+needed:
+
+```bash
+ISH_NODE=/absolute/path/to/node ./scripts/install.sh
+```
+
+The chosen Node executable is pinned inside the installed ish layout so
+`ishctl`, intentd, and Pi use the same compatible runtime after login or service
+restart.
 
 If zsh is missing, the installer stops before building and prints the recovery
 command. Rerun with explicit permission to use the detected package manager:

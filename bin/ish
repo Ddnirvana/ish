@@ -12,12 +12,16 @@ done
 root=$(CDPATH= cd -- "$(dirname "$self")/.." && pwd)
 ctl="$root/dist/src/ctl-cli.js"
 zsh_command=${ISH_ZSH:-zsh}
+node_command=${ISH_NODE:-$root/runtime/node}
+[ -x "$node_command" ] || node_command=node
 
 case "${1:-}" in
   config|doctor)
     command=$1
     shift
-    exec node "$ctl" "$command" "$@"
+    PATH=$(dirname "$node_command"):$PATH
+    export PATH
+    exec "$node_command" "$ctl" "$command" "$@"
     ;;
   service)
     shift
@@ -39,7 +43,7 @@ case "${1:-}" in
     exit 0
     ;;
   --version|-v)
-    exec node -e "const p=require('$root/package.json'); console.log('ish '+p.version)"
+    exec "$node_command" -e "const p=require('$root/package.json'); console.log('ish '+p.version)"
     ;;
   help|-h|--help)
     printf '%s\n' "ish - the intent shell"

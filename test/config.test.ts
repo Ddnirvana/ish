@@ -86,7 +86,13 @@ test("interactive credential input is hidden in a real terminal", async (t) => {
 	assert.equal(result.status, 0, result.stderr);
 	const command = `ISH_CREDENTIALS=${JSON.stringify(credentials)} ${JSON.stringify(process.execPath)} ${JSON.stringify(cli)} config set key deepseek`;
 	tmux(["send-keys", "-t", "key:0.0", command, "Enter"]);
-	await new Promise((resolve) => setTimeout(resolve, 100));
+	const promptDeadline = Date.now() + 3000;
+	let prompt = "";
+	while (Date.now() < promptDeadline && !/API key for deepseek:/.test(prompt)) {
+		prompt = tmux(["capture-pane", "-p", "-t", "key:0.0", "-S", "-100"]).stdout;
+		if (!/API key for deepseek:/.test(prompt)) await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+	assert.match(prompt, /API key for deepseek:/);
 	tmux(["send-keys", "-t", "key:0.0", "terminal-key-not-secret", "Enter"]);
 	const deadline = Date.now() + 3000;
 	let stored = "";
