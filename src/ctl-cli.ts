@@ -94,7 +94,12 @@ async function runPi(prompt: string): Promise<void> {
 	const config = await readConfig();
 	const sessionDir = process.env.ISH_PI_SESSION_DIR ?? path.join(defaultStateDir(), "pi-sessions");
 	const extension = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "pi-extension.js");
-	const nativeContext = formatNativeContext(await readNativeTranscriptsWhenReady());
+	const nativeEvents = await readNativeTranscriptsWhenReady();
+	const expectedNativeId = process.env.ISH_TRANSCRIPT_EXPECT_ID;
+	const captureStatus = expectedNativeId && !nativeEvents.some((event) => event.id === expectedNativeId)
+		? "incomplete-recorder-timeout"
+		: process.env.ISH_TRANSCRIPT_STATUS;
+	const nativeContext = formatNativeContext(nativeEvents, undefined, captureStatus);
 	const effectivePrompt = nativeContext ? `${prompt}\n\n${nativeContext}` : prompt;
 	const started = Date.now();
 	process.stdout.write(renderAgentStart(prompt));

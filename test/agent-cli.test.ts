@@ -94,6 +94,26 @@ test("agent CLI supplies bounded native transcript context to Pi", async (t) => 
 	assert.match(result.stdout, /untrusted-observation/);
 });
 
+test("agent CLI reports a transcript handoff timeout explicitly", async (t) => {
+	chmodSync(fakePi, 0o755);
+	const root = await mkdtemp(path.join(os.tmpdir(), "ish-agent-transcript-timeout-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const result = spawnSync(process.execPath, [cli, "ask", "--", "analyze the missing output"], {
+		encoding: "utf8",
+		env: {
+			...process.env,
+			ISH_PI: fakePi,
+			ISH_TRANSCRIPT_EVENTS: path.join(root, "events.jsonl"),
+			ISH_TRANSCRIPT_EXPECT_ID: "not-persisted",
+			ISH_TRANSCRIPT_STATUS: "active",
+			NO_COLOR: "1",
+			ISH_ASCII: "1",
+		},
+	});
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /capture_status: incomplete-recorder-timeout/);
+});
+
 test("leading question routing stays invisible in a real zsh editor", async (t) => {
 	const hasTmux = spawnSync("tmux", ["-V"], { stdio: "ignore" }).status === 0;
 	if (!hasTmux) return t.skip("tmux is unavailable");

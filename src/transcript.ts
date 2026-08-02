@@ -213,7 +213,7 @@ export async function readNativeTranscripts(file = process.env.ISH_TRANSCRIPT_EV
 export async function readNativeTranscriptsWhenReady(
 	expectedId = process.env.ISH_TRANSCRIPT_EXPECT_ID,
 	file = process.env.ISH_TRANSCRIPT_EVENTS,
-	timeoutMs = 150,
+	timeoutMs = 1000,
 ): Promise<NativeTranscript[]> {
 	let events = await readNativeTranscripts(file);
 	if (!expectedId || events.some((event) => event.id === expectedId)) return events;
