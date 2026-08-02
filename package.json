@@ -17,6 +17,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/test/*.test.js && zsh -n shell/ish.zsh",
+    "test:soak": "npm run build && node scripts/soak.mjs --iterations 200",
     "demo": "npm run build && node scripts/evaluate.mjs --iterations 5",
     "demo:jobs": "npm run build && bash scripts/demo.sh",
     "postinstall": "bash scripts/harden-dependencies.sh",
