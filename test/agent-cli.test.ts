@@ -6,6 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { updateConfig } from "../src/config.js";
+import { updateCredential } from "../src/credentials.js";
 
 const cli = fileURLToPath(new URL("../src/ctl-cli.js", import.meta.url));
 const fakePi = fileURLToPath(new URL("./fixtures/fake-pi.js", import.meta.url));
@@ -35,6 +37,32 @@ test("missing Pi reports a concise recovery action without a Node stack", () => 
 	assert.equal(result.status, 1);
 	assert.match(result.stderr, /^error ish /);
 	assert.doesNotMatch(result.stderr, /node:internal|at ChildProcess|ENOENT/);
+});
+
+test("agent CLI loads a stored provider key without displaying it", async (t) => {
+	chmodSync(fakePi, 0o755);
+	const root = await mkdtemp(path.join(os.tmpdir(), "ish-agent-credential-"));
+	const config = path.join(root, "config.json");
+	const credentials = path.join(root, "credentials.json");
+	t.after(() => rm(root, { recursive: true, force: true }));
+	await updateConfig("provider", "deepseek", config);
+	await updateCredential("deepseek", "test-key-not-secret", credentials);
+	const result = spawnSync(process.execPath, [cli, "ask", "--", "credential probe"], {
+		encoding: "utf8",
+		env: {
+			...process.env,
+			ISH_PI: fakePi,
+			ISH_CONFIG: config,
+			ISH_CREDENTIALS: credentials,
+			DEEPSEEK_API_KEY: undefined,
+			NO_COLOR: "1",
+			ISH_ASCII: "1",
+			INTENTD_SOCKET: "/missing/intentd.sock",
+		},
+	});
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /"credentialVariable":"DEEPSEEK_API_KEY"/);
+	assert.doesNotMatch(result.stdout + result.stderr, /test-key-not-secret/);
 });
 
 test("leading question routing stays invisible in a real zsh editor", async (t) => {

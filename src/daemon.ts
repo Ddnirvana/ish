@@ -258,6 +258,23 @@ export class IntentDaemon {
 
 	private async launch(record: IntentRecord): Promise<void> {
 		await mkdir(path.dirname(record.logPath), { recursive: true, mode: 0o700 });
+		let runnerArgs: string[];
+		let runnerEnvironment: NodeJS.ProcessEnv;
+		try {
+			runnerArgs = typeof this.options.runner.args === "function"
+				? await this.options.runner.args()
+				: this.options.runner.args;
+			runnerEnvironment = this.options.runner.environment
+				? await this.options.runner.environment()
+				: process.env;
+		} catch (error) {
+			record.status = "failed";
+			record.updatedAt = now();
+			record.error = `runner configuration failed: ${error instanceof Error ? error.message : String(error)}`;
+			await this.store.set(record);
+			await appendFile(record.logPath, `\n=== failed ${record.updatedAt} ===\n${record.error}\n`, { mode: 0o600 });
+			return;
+		}
 		record.status = "running";
 		record.attempt += 1;
 		record.updatedAt = now();
@@ -270,9 +287,9 @@ export class IntentDaemon {
 		const prompt = record.acceptance.length
 			? `${record.objective}\n\nAcceptance criteria:\n${record.acceptance.map((item) => `- ${item}`).join("\n")}`
 			: record.objective;
-		const child = spawn(this.options.runner.command, [...this.options.runner.args, "--mode", "json", "-p", prompt], {
+		const child = spawn(this.options.runner.command, [...runnerArgs, "--mode", "json", "-p", prompt], {
 			cwd: record.cwd,
-			env: process.env,
+			env: runnerEnvironment,
 			detached: process.platform !== "win32",
 			stdio: ["ignore", "pipe", "pipe"],
 		});

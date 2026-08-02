@@ -61,5 +61,6 @@ export type IntentResponse =
 
 export interface RunnerConfig {
 	command: string;
-	args: string[];
+	args: string[] | (() => Promise<string[]>);
+	environment?: () => Promise<NodeJS.ProcessEnv>;
 }

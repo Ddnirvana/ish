@@ -14,6 +14,12 @@ import type { IntentRecord } from "./types.js";
 import { ISH_SYSTEM_PROMPT, renderAgentEnd, renderAgentStart, renderFailure } from "./ui.js";
 import { cwdToken, type ActionRecord, type ActionTargetState, type EffectClass } from "./capsules.js";
 import { defaultConfigPath, readConfig, updateConfig, type IshConfigKey } from "./config.js";
+import {
+	credentialStatus,
+	defaultCredentialPath,
+	piEnvironment,
+	updateCredential,
+} from "./credentials.js";
 
 function summarize(record: IntentRecord): string {
 	return [record.id, record.status.padEnd(11), record.requester, record.objective].join("\t");
@@ -61,6 +67,16 @@ function printPlan(plan: BroadcastPlan): void {
 	for (const { pane, reason } of plan.excluded) console.log(`excluded\t${formatPane(pane)}\t${reason}`);
 }
 
+function versionAtLeast(version: string, minimum: string): boolean {
+	const have = version.split(".").map(Number);
+	const need = minimum.split(".").map(Number);
+	for (let index = 0; index < Math.max(have.length, need.length); index += 1) {
+		if ((have[index] ?? 0) > (need[index] ?? 0)) return true;
+		if ((have[index] ?? 0) < (need[index] ?? 0)) return false;
+	}
+	return true;
+}
+
 function resolvePiBinary(): string {
 	const configured = process.env.ISH_PI?.trim();
 	if (configured) return configured;
@@ -98,7 +114,7 @@ async function runPi(prompt: string): Promise<void> {
 	);
 	const child = spawn(binary, piArgs, {
 		cwd: process.cwd(),
-		env: process.env,
+		env: await piEnvironment(config),
 		stdio: "inherit",
 	});
 	const exitCode = await new Promise<number>((resolve, reject) => {
@@ -109,6 +125,47 @@ async function runPi(prompt: string): Promise<void> {
 	});
 	if (exitCode !== 0) throw new Error(`${binary} exited with code ${exitCode}`);
 	process.stdout.write(renderAgentEnd(Date.now() - started));
+}
+
+async function readSecret(prompt: string): Promise<string> {
+	if (!process.stdin.isTTY || typeof process.stdin.setRawMode !== "function") {
+		const chunks: Buffer[] = [];
+		for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
+		const value = Buffer.concat(chunks).toString("utf8").split(/\r?\n/, 1)[0] ?? "";
+		if (!value) throw new Error("API key input was empty");
+		return value;
+	}
+	process.stderr.write(prompt);
+	const wasRaw = process.stdin.isRaw;
+	process.stdin.setRawMode(true);
+	process.stdin.resume();
+	return new Promise<string>((resolve, reject) => {
+		let value = "";
+		const finish = (error?: Error) => {
+			process.stdin.off("data", onData);
+			process.stdin.setRawMode(wasRaw ?? false);
+			process.stderr.write("\n");
+			if (error) reject(error);
+			else if (!value) reject(new Error("API key input was empty"));
+			else resolve(value);
+		};
+		const onData = (chunk: Buffer | string) => {
+			for (const character of chunk.toString()) {
+				if (character === "\r" || character === "\n") return finish();
+				if (character === "\u0003" || character === "\u0004") return finish(new Error("credential input cancelled"));
+				if (character === "\u007f" || character === "\b") value = value.slice(0, -1);
+				else if (character >= " ") value += character;
+			}
+		};
+		process.stdin.on("data", onData);
+	});
+}
+
+async function configuredProvider(explicit?: string): Promise<string> {
+	if (explicit) return explicit;
+	const config = await readConfig();
+	if (!config.provider) throw new Error("configure a provider first: ish config set provider <provider>");
+	return config.provider;
 }
 
 async function currentScope(): Promise<ContextScope> {
@@ -175,23 +232,45 @@ async function run(command = "help", rawArgs: string[]): Promise<void> {
 		case "config": {
 			const subcommand = args[0] ?? "show";
 			if (subcommand === "show") {
-				console.log(JSON.stringify({ path: defaultConfigPath(), ...(await readConfig()) }, null, 2));
+				const config = await readConfig();
+				const credential = config.provider
+					? await credentialStatus(config.provider)
+					: { source: "not-checked", detail: "configure a provider to check credentials" };
+				console.log(JSON.stringify({ path: defaultConfigPath(), credentialPath: defaultCredentialPath(), ...config, credential }, null, 2));
 				return;
 			}
-			const key = args[1] as IshConfigKey | undefined;
+			if (subcommand === "key-status") {
+				console.log(JSON.stringify(await credentialStatus(await configuredProvider(args[1])), null, 2));
+				return;
+			}
+			const key = args[1];
+			if (key === "key") {
+				if (args.length > 3) throw new Error("API keys must be entered at the hidden prompt, not as command arguments");
+				const provider = await configuredProvider(args[2]);
+				if (subcommand === "set") {
+					await updateCredential(provider, await readSecret(`API key for ${provider}: `));
+					console.log(`stored API key for ${provider}; restart is not required`);
+					return;
+				}
+				if (subcommand === "unset") {
+					await updateCredential(provider, undefined);
+					console.log(`removed stored API key for ${provider}`);
+					return;
+				}
+			}
 			if (!key || !["provider", "model"].includes(key)) {
-				throw new Error("usage: ish config show | set provider|model <value> | unset provider|model");
+				throw new Error("usage: ish config show | set provider|model <value> | set key [provider] | unset provider|model|key [provider] | key-status [provider]");
 			}
 			if (subcommand === "set") {
 				if (!args[2]) throw new Error(`missing value for ${key}`);
-				console.log(JSON.stringify(await updateConfig(key, args[2]), null, 2));
+				console.log(JSON.stringify(await updateConfig(key as IshConfigKey, args[2]), null, 2));
 				return;
 			}
 			if (subcommand === "unset") {
-				console.log(JSON.stringify(await updateConfig(key, undefined), null, 2));
+				console.log(JSON.stringify(await updateConfig(key as IshConfigKey, undefined), null, 2));
 				return;
 			}
-			throw new Error("usage: ish config show | set provider|model <value> | unset provider|model");
+			throw new Error("usage: ish config show | set provider|model <value> | set key [provider] | unset provider|model|key [provider] | key-status [provider]");
 		}
 		case "doctor": {
 			let failures = 0;
@@ -201,30 +280,28 @@ async function run(command = "help", rawArgs: string[]): Promise<void> {
 			};
 			const [major, minor] = process.versions.node.split(".").map(Number);
 			check(major > 22 || (major === 22 && minor >= 19) ? "ok" : "fail", "node", process.version);
-			const zsh = spawnSync("zsh", ["--version"], { encoding: "utf8" });
-			check(zsh.status === 0 ? "ok" : "fail", "zsh", zsh.status === 0 ? zsh.stdout.trim() : "not found");
+			const zsh = spawnSync(process.env.ISH_ZSH ?? "zsh", ["--version"], { encoding: "utf8" });
+			const zshVersion = /zsh\s+([0-9.]+)/.exec(zsh.stdout)?.[1];
+			check(zsh.status === 0 && zshVersion && versionAtLeast(zshVersion, "5.8") ? "ok" : "fail", "zsh", zsh.status === 0 ? zsh.stdout.trim() : "not found");
 			try {
 				const pi = resolvePiBinary();
 				const version = spawnSync(pi, ["--version"], { encoding: "utf8", env: process.env });
-				check(version.status === 0 ? "ok" : "fail", "pi", version.status === 0 ? `${pi} (${version.stdout.trim()})` : `${pi} did not start`);
+				const state = version.status !== 0 ? "fail" : /0\.83\.0/.test(version.stdout) ? "ok" : "warn";
+				check(state, "pi", version.status === 0 ? `${pi} (${version.stdout.trim()}; tested 0.83.0)` : `${pi} did not start`);
 			} catch (error) {
 				check("fail", "pi", error instanceof Error ? error.message : String(error));
 			}
 			const config = await readConfig();
 			check(config.provider ? "ok" : "warn", "provider", config.provider ?? "not configured; Pi default applies");
 			check(config.model ? "ok" : "warn", "model", config.model ?? "not configured; Pi default applies");
-			const credentialVariables: Record<string, string> = {
-				deepseek: "DEEPSEEK_API_KEY",
-				openai: "OPENAI_API_KEY",
-				anthropic: "ANTHROPIC_API_KEY",
-				google: "GEMINI_API_KEY",
-			};
-			if (config.provider && credentialVariables[config.provider]) {
-				const variable = credentialVariables[config.provider];
-				check(process.env[variable] ? "ok" : "warn", "credential", process.env[variable] ? `${variable} is set in this process` : `${variable} is not set in this process`);
-			} else {
-				check("warn", "credential", "provider-specific environment was not checked");
-			}
+			if (config.provider) {
+				try {
+					const credential = await credentialStatus(config.provider);
+					check(["missing", "pi-managed"].includes(credential.source) ? "warn" : "ok", "credential", `${credential.variable}: ${credential.source}`);
+				} catch (error) {
+					check("warn", "credential", error instanceof Error ? error.message : String(error));
+				}
+			} else check("warn", "credential", "configure a provider to check credentials");
 			try {
 				await client.ping();
 				check("ok", "intentd", process.env.INTENTD_SOCKET ?? defaultSocketPath());

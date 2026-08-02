@@ -111,3 +111,32 @@ test("completed intent state survives daemon restart", async (t) => {
 	});
 	assert.equal(context[0]?.content, "persistent system-level question");
 });
+
+test("runner configuration failures become terminal intent failures", async (t) => {
+	const root = await mkdtemp(path.join(os.tmpdir(), "ish-runner-config-failure-"));
+	const socketPath = path.join(root, "intentd.sock");
+	const daemon = new IntentDaemon({
+		socketPath,
+		stateDir: path.join(root, "state"),
+		runner: {
+			command: process.execPath,
+			args: async () => {
+				throw new Error("invalid provider configuration");
+			},
+		},
+	});
+	await daemon.start();
+	t.after(async () => {
+		await daemon.stop();
+		await rm(root, { recursive: true, force: true });
+	});
+	const client = new IntentClient(socketPath);
+	const submitted = await client.submit({
+		objective: "fail clearly",
+		cwd: process.cwd(),
+		requester: "test",
+	});
+	const failed = await waitFor(client, submitted.id, ["failed"]);
+	assert.match(failed.error ?? "", /runner configuration failed: invalid provider configuration/);
+	assert.match((await client.logs(submitted.id)).text, /invalid provider configuration/);
+});

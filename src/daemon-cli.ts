@@ -1,6 +1,11 @@
 #!/usr/bin/env node
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { readConfig } from "./config.js";
+import { piEnvironment } from "./credentials.js";
 import { IntentDaemon } from "./daemon.js";
 import { defaultSocketPath, defaultStateDir } from "./paths.js";
+import { ISH_SYSTEM_PROMPT } from "./ui.js";
 
 interface CliOptions {
 	socketPath: string;
@@ -55,10 +60,31 @@ function parseArgs(args: string[]): CliOptions {
 }
 
 const options = parseArgs(process.argv.slice(2));
+const extension = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "pi-extension.js");
 const daemon = new IntentDaemon({
 	socketPath: options.socketPath,
 	stateDir: options.stateDir,
-	runner: { command: options.runner, args: options.runnerArgs },
+	runner: {
+		command: options.runner,
+		args: async () => {
+			const config = await readConfig();
+			const args = [...options.runnerArgs];
+			if (config.provider) args.push("--provider", config.provider);
+			if (config.model) args.push("--model", config.model);
+			args.push(
+				"--session-dir",
+				process.env.ISH_PI_SESSION_DIR ?? path.join(defaultStateDir(), "pi-sessions"),
+				"--extension",
+				extension,
+				"--append-system-prompt",
+				ISH_SYSTEM_PROMPT,
+				"--tools",
+				process.env.ISH_PI_TOOLS ?? "read,grep,find,ls,system_inspect",
+			);
+			return args;
+		},
+		environment: async () => piEnvironment(await readConfig()),
+	},
 	maxConcurrency: options.maxConcurrency,
 });
 
