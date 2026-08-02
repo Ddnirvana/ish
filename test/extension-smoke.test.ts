@@ -3,7 +3,7 @@ import test from "node:test";
 import intentExtension from "../src/pi-extension.js";
 import type { PiExtensionAPI } from "../src/pi-types.js";
 
-test("Pi adapter registers one durable-job tool and one slash command", () => {
+test("Pi adapter registers bounded system inspection, durable jobs, and one slash command", () => {
 	const tools: Array<{ name: string }> = [];
 	const commands = new Map<string, unknown>();
 	const api = {
@@ -17,6 +17,6 @@ test("Pi adapter registers one durable-job tool and one slash command", () => {
 
 	intentExtension(api as unknown as PiExtensionAPI);
 
-	assert.deepEqual(tools.map((tool) => tool.name), ["intent_job"]);
+	assert.deepEqual(tools.map((tool) => tool.name), ["intent_job", "system_inspect"]);
 	assert.deepEqual([...commands.keys()], ["intent"]);
 });

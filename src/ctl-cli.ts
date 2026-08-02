@@ -76,6 +76,7 @@ async function runPi(prompt: string): Promise<void> {
 	const binary = resolvePiBinary();
 	const config = await readConfig();
 	const sessionDir = process.env.ISH_PI_SESSION_DIR ?? path.join(defaultStateDir(), "pi-sessions");
+	const extension = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "pi-extension.js");
 	const started = Date.now();
 	process.stdout.write(renderAgentStart(prompt));
 	const piArgs = [
@@ -86,10 +87,12 @@ async function runPi(prompt: string): Promise<void> {
 	if (config.provider) piArgs.push("--provider", config.provider);
 	if (config.model) piArgs.push("--model", config.model);
 	piArgs.push(
+		"--extension",
+		extension,
 		"--append-system-prompt",
 		ISH_SYSTEM_PROMPT,
 		"--tools",
-		process.env.ISH_PI_TOOLS ?? "read,grep,find,ls",
+		process.env.ISH_PI_TOOLS ?? "read,grep,find,ls,system_inspect",
 		"-p",
 		prompt,
 	);

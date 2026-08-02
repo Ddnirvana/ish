@@ -6,19 +6,14 @@ export interface PiExtensionContext {
 }
 
 export interface PiExtensionAPI {
-	registerTool(tool: {
+	registerTool<TParams extends Record<string, unknown>>(tool: {
 		name: string;
 		label: string;
 		description: string;
 		parameters: unknown;
 		execute(
 			toolCallId: string,
-			params: {
-				action: "submit" | "list" | "show" | "logs" | "cancel" | "retry";
-				objective?: string;
-				id?: string;
-				acceptance?: string[];
-			},
+			params: TParams,
 			signal: AbortSignal,
 			onUpdate: unknown,
 			ctx: PiExtensionContext,

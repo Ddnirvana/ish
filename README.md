@@ -110,7 +110,17 @@ history and invokes Pi behind the editor; it never exposes an expanded
 
 Pi receives an identity contract that describes the environment as **ish
 (intent shell)**, a new system-level shell built on zsh and Pi. Its default
-tools are read-only: `read`, `grep`, `find`, and `ls`.
+tools are read-only: `read`, `grep`, `find`, `ls`, and ish's bounded
+`system_inspect` extension. The extension measures exact file sizes and metadata
+without accepting command strings or following symlinked directories.
+
+```text
+? summarize the five largest files in this directory
+```
+
+Direct-directory inspection is the default. Pi can request a recursive scan,
+but traversal is capped by depth, entry count, and time; a capped or
+error-affected result is explicitly marked incomplete.
 
 ### Approval
 

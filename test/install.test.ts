@@ -50,6 +50,11 @@ exit 0
 		assert.equal(await exists(target), true, target);
 		assert.match(await readlink(target), /lib\/ish/);
 	}
+	assert.equal(
+		await exists(path.join(prefix, "lib", "ish", "dist", "extensions", "system-inspect", "index.js")),
+		true,
+		"installed prefix must include the compiled system_inspect extension",
+	);
 	const hardened = JSON.parse(
 		await readFile(path.join(prefix, "lib", "ish", "node_modules", "@earendil-works", "pi-coding-agent", "node_modules", "brace-expansion", "package.json"), "utf8"),
 	) as { version: string };

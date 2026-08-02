@@ -1,4 +1,5 @@
 import { Type } from "typebox";
+import { registerSystemInspect } from "../extensions/system-inspect/index.js";
 import { IntentClient } from "./client.js";
 import { defaultSocketPath } from "./paths.js";
 import type { PiExtensionAPI, PiExtensionContext } from "./pi-types.js";
@@ -17,6 +18,13 @@ const IntentParams = Type.Object({
 	id: Type.Optional(Type.String({ description: "Intent ID for show, logs, cancel, or retry" })),
 	acceptance: Type.Optional(Type.Array(Type.String({ description: "Observable completion criterion" }))),
 });
+
+interface IntentToolParams extends Record<string, unknown> {
+	action: "submit" | "list" | "show" | "logs" | "cancel" | "retry";
+	objective?: string;
+	id?: string;
+	acceptance?: string[];
+}
 
 function client(): IntentClient {
 	return new IntentClient(process.env.INTENTD_SOCKET ?? defaultSocketPath());
@@ -64,7 +72,7 @@ async function runAction(
 }
 
 export default function (pi: PiExtensionAPI) {
-	pi.registerTool({
+	pi.registerTool<IntentToolParams>({
 		name: "intent_job",
 		label: "Intent Job",
 		description:
@@ -75,6 +83,8 @@ export default function (pi: PiExtensionAPI) {
 			return { content: [{ type: "text", text }], details: { action: params.action } };
 		},
 	});
+
+	registerSystemInspect(pi);
 
 	pi.registerCommand("intent", {
 		description: "Control durable cross-session Pi jobs",
