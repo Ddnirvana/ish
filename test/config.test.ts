@@ -104,6 +104,21 @@ test("interactive credential input is hidden in a real terminal", async (t) => {
 		}
 	}
 	assert.match(stored, /terminal-key-not-secret/);
+	const returnDeadline = Date.now() + 3000;
+	let currentCommand = "";
+	while (Date.now() < returnDeadline && currentCommand !== "zsh") {
+		currentCommand = tmux(["display-message", "-p", "-t", "key:0.0", "#{pane_current_command}"]).stdout.trim();
+		if (currentCommand !== "zsh") await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+	assert.equal(currentCommand, "zsh", "credential command must release the terminal back to zsh");
+	tmux(["send-keys", "-t", "key:0.0", "print -r -- ISH_KEY_PROMPT_RETURNED", "Enter"]);
+	const markerDeadline = Date.now() + 3000;
+	let pane = "";
+	while (Date.now() < markerDeadline && !/ISH_KEY_PROMPT_RETURNED/.test(pane)) {
+		pane = tmux(["capture-pane", "-p", "-t", "key:0.0", "-S", "-100"]).stdout;
+		if (!/ISH_KEY_PROMPT_RETURNED/.test(pane)) await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+	assert.match(pane, /ISH_KEY_PROMPT_RETURNED/);
 	result = tmux(["capture-pane", "-p", "-t", "key:0.0", "-S", "-100"]);
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.stdout, /API key for deepseek:/);

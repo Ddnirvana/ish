@@ -144,6 +144,7 @@ async function readSecret(prompt: string): Promise<string> {
 		const finish = (error?: Error) => {
 			process.stdin.off("data", onData);
 			process.stdin.setRawMode(wasRaw ?? false);
+			process.stdin.pause();
 			process.stderr.write("\n");
 			if (error) reject(error);
 			else if (!value) reject(new Error("API key input was empty"));
