@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { access, chmod, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
+import { access, chmod, cp, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-const install = fileURLToPath(new URL("../../scripts/install.sh", import.meta.url));
-const uninstall = fileURLToPath(new URL("../../scripts/uninstall.sh", import.meta.url));
+const sourceRoot = fileURLToPath(new URL("../..", import.meta.url));
 
 async function exists(target: string): Promise<boolean> {
 	try {
@@ -21,6 +20,13 @@ async function exists(target: string): Promise<boolean> {
 test("install, upgrade, launcher, and uninstall are idempotent in a disposable prefix", async (t) => {
 	const root = await mkdtemp(path.join(os.tmpdir(), "ish-install-"));
 	t.after(() => rm(root, { recursive: true, force: true }));
+	const checkout = path.join(root, "source");
+	await cp(sourceRoot, checkout, {
+		recursive: true,
+		filter: (source) => ![".git", "node_modules"].includes(path.basename(source)),
+	});
+	const install = path.join(checkout, "scripts", "install.sh");
+	const uninstall = path.join(checkout, "scripts", "uninstall.sh");
 	const prefix = path.join(root, "prefix");
 	const fakeBin = path.join(root, "bin");
 	await mkdir(fakeBin);
@@ -28,17 +34,34 @@ test("install, upgrade, launcher, and uninstall are idempotent in a disposable p
 	await writeFile(
 		fakeNpm,
 		`#!/bin/sh
-case "$PWD" in
-  *.stage.*)
-    target="$PWD/node_modules/@earendil-works/pi-coding-agent/node_modules/brace-expansion"
-    mkdir -p "$target"
-    printf '%s\n' '{"version":"5.0.7"}' > "$target/package.json"
-    ;;
-esac
+if [ "$1" = ci ]; then
+  target="$PWD/node_modules/@earendil-works/pi-coding-agent/node_modules/brace-expansion"
+  mkdir -p "$target"
+  printf '%s\n' '{"version":"5.0.7"}' > "$target/package.json"
+  case "$PWD" in
+    *.stage.*)
+      mkdir -p "$PWD/node_modules/@earendil-works/pi-coding-agent" "$PWD/node_modules/.bin"
+      printf '%s\n' '{"version":"0.83.0"}' > "$PWD/node_modules/@earendil-works/pi-coding-agent/package.json"
+      printf '%s\n' '#!/bin/sh' 'echo pi 0.83.0' > "$PWD/node_modules/.bin/pi"
+      chmod 755 "$PWD/node_modules/.bin/pi"
+      ;;
+  esac
+fi
 exit 0
 `,
 	);
 	await chmod(fakeNpm, 0o755);
+	const fakeZsh = path.join(fakeBin, "zsh-for-ish");
+	const fakeBrew = path.join(fakeBin, "brew");
+	await writeFile(
+		fakeBrew,
+		`#!/bin/sh
+test "$1" = install && test "$2" = zsh
+printf '%s\n' '#!/bin/sh' 'echo zsh 5.9' > "${fakeZsh}"
+chmod 755 "${fakeZsh}"
+`,
+	);
+	await chmod(fakeBrew, 0o755);
 	const launchctl = path.join(fakeBin, "launchctl");
 	const launchdState = path.join(root, "launchd-loaded");
 	await writeFile(
@@ -57,12 +80,22 @@ esac
 		...process.env,
 		ISH_PREFIX: prefix,
 		ISH_SERVICE_PLATFORM: "Darwin",
+		ISH_INSTALL_PLATFORM: "Darwin",
+		ISH_ZSH: fakeZsh,
+		ISH_BREW: fakeBrew,
 		ISH_LAUNCHCTL: launchctl,
 		ISH_SERVICE_UID: "501",
 		ISH_LAUNCH_AGENT_DIR: agentDir,
 		ISH_SERVICE_LOG_DIR: path.join(root, "logs"),
 		PATH: `${fakeBin}:${process.env.PATH}`,
 	};
+	let result = spawnSync(install, ["--no-service"], { encoding: "utf8", env });
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /--install-deps/);
+	result = spawnSync(install, ["--install-deps", "--no-service"], { encoding: "utf8", env });
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /installing zsh with Homebrew/);
+	assert.match(result.stdout, /bundled Pi 0\.83\.0/);
 	for (let iteration = 0; iteration < 2; iteration += 1) {
 		const result = spawnSync(install, ["--no-service"], { encoding: "utf8", env });
 		assert.equal(result.status, 0, result.stderr);
@@ -78,11 +111,12 @@ esac
 		true,
 		"installed prefix must include the compiled system_inspect extension",
 	);
+	assert.equal(await exists(path.join(prefix, "lib", "ish", "docs", "getting-started.md")), true);
 	const hardened = JSON.parse(
 		await readFile(path.join(prefix, "lib", "ish", "node_modules", "@earendil-works", "pi-coding-agent", "node_modules", "brace-expansion", "package.json"), "utf8"),
 	) as { version: string };
 	assert.equal(hardened.version, "5.0.9");
-	let result = spawnSync(path.join(prefix, "bin", "ish"), ["--version"], { encoding: "utf8", env });
+	result = spawnSync(path.join(prefix, "bin", "ish"), ["--version"], { encoding: "utf8", env });
 	assert.equal(result.status, 0, result.stderr);
 	assert.equal(result.stdout.trim(), "ish 0.1.0");
 	result = spawnSync(install, [], { encoding: "utf8", env });

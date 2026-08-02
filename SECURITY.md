@@ -2,7 +2,7 @@
 
 ## Supported Scope
 
-ish supports one trusted Linux user. `intentd`, `ishctl`, Pi, and all
+ish supports one trusted macOS or Linux user. `intentd`, `ishctl`, Pi, and all
 registered shells run with that user's authority. Do not expose the Unix socket
 or capsule FIFO directory to other users.
 
@@ -39,8 +39,10 @@ does not make an approved command safe. Use OS isolation for untrusted commands.
 Pi and model providers are outside the trusted admission mechanism. Changing
 `ISH_PI_TOOLS` can give Pi effectful tools and bypass the read-only default; do
 that only inside an OS sandbox. Never send secrets through context records or
-prompts. Inject provider credentials only through the process environment or
-the provider's supported credential store.
+prompts. `ish config set key` stores API keys separately from normal config in a
+mode-0600 user file and injects only the selected provider's variable into Pi.
+An existing process environment variable takes precedence. Service definitions
+contain neither the credential file contents nor provider variables.
 
 ## Supply-chain hardening
 

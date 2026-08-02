@@ -6,11 +6,101 @@ prefix="${ISH_PREFIX:-$HOME/.local}"
 libdir="$prefix/lib/ish"
 bindir="$prefix/bin"
 install_service=1
-[[ "${1:-}" == --no-service ]] && install_service=0
+install_deps=0
+for argument in "$@"; do
+  case "$argument" in
+    --no-service) install_service=0 ;;
+    --install-deps) install_deps=1 ;;
+    *)
+      echo "usage: ./scripts/install.sh [--no-service] [--install-deps]" >&2
+      exit 2
+      ;;
+  esac
+done
 
-node_major="$(node -p 'process.versions.node.split(".")[0]')"
-if (( node_major < 22 )); then
-  echo "ish requires Node.js 22 or newer" >&2
+command -v node >/dev/null 2>&1 || {
+  echo "ish requires Node.js 22.19 or newer; install Node.js, then rerun this installer" >&2
+  exit 1
+}
+command -v npm >/dev/null 2>&1 || {
+  echo "ish requires npm from a Node.js 22.19+ installation" >&2
+  exit 1
+}
+node_supported="$(node -p 'const [a,b]=process.versions.node.split(".").map(Number); Number(a>22 || (a===22 && b>=19))')"
+if [[ "$node_supported" != 1 ]]; then
+  echo "ish requires Node.js 22.19 or newer; found $(node --version)" >&2
+  exit 1
+fi
+
+version_at_least() {
+  awk -v have="$1" -v need="$2" 'BEGIN {
+    split(have, h, "."); split(need, n, ".");
+    for (i = 1; i <= 3; i++) {
+      if ((h[i] + 0) > (n[i] + 0)) exit 0;
+      if ((h[i] + 0) < (n[i] + 0)) exit 1;
+    }
+    exit 0;
+  }'
+}
+
+install_zsh() {
+  platform="${ISH_INSTALL_PLATFORM:-$(uname -s)}"
+  case "$platform" in
+    Darwin)
+      brew_bin="${ISH_BREW:-brew}"
+      command -v "$brew_bin" >/dev/null 2>&1 || {
+        echo "zsh is missing and Homebrew is unavailable; install zsh 5.8+ and rerun" >&2
+        exit 1
+      }
+      echo "installing zsh with Homebrew"
+      "$brew_bin" install zsh
+      ;;
+    Linux)
+      sudo_bin="${ISH_SUDO:-sudo}"
+      if [[ "$(id -u)" == 0 ]]; then
+        privilege=()
+      else
+        command -v "$sudo_bin" >/dev/null 2>&1 || {
+          echo "zsh is missing and sudo is unavailable; install zsh 5.8+ and rerun" >&2
+          exit 1
+        }
+        privilege=("$sudo_bin")
+      fi
+      if command -v "${ISH_APT_GET:-apt-get}" >/dev/null 2>&1; then
+        apt_get="${ISH_APT_GET:-apt-get}"
+        echo "installing zsh with apt"
+        "${privilege[@]}" "$apt_get" update
+        "${privilege[@]}" "$apt_get" install -y zsh
+      elif command -v "${ISH_DNF:-dnf}" >/dev/null 2>&1; then
+        echo "installing zsh with dnf"
+        "${privilege[@]}" "${ISH_DNF:-dnf}" install -y zsh
+      elif command -v "${ISH_PACMAN:-pacman}" >/dev/null 2>&1; then
+        echo "installing zsh with pacman"
+        "${privilege[@]}" "${ISH_PACMAN:-pacman}" -Sy --needed zsh
+      else
+        echo "zsh is missing and no supported package manager was found; install zsh 5.8+ and rerun" >&2
+        exit 1
+      fi
+      ;;
+    *)
+      echo "zsh is missing; install zsh 5.8+ for $platform and rerun" >&2
+      exit 1
+      ;;
+  esac
+}
+
+zsh_bin="${ISH_ZSH:-zsh}"
+if ! command -v "$zsh_bin" >/dev/null 2>&1; then
+  if (( install_deps )); then
+    install_zsh
+  else
+    echo "ish requires zsh 5.8 or newer; rerun with --install-deps to install it with your system package manager" >&2
+    exit 1
+  fi
+fi
+zsh_version="$($zsh_bin --version | awk '{print $2}')"
+if ! version_at_least "$zsh_version" 5.8; then
+  echo "ish requires zsh 5.8 or newer; found $zsh_version" >&2
   exit 1
 fi
 
@@ -24,12 +114,21 @@ stage="$libdir.stage.$$"
 trap 'rm -rf "$stage"' EXIT
 rm -rf "$stage"
 mkdir -p "$stage"
-cp -R bin dist shell scripts vendor "$stage/"
+cp -R bin dist docs shell scripts vendor "$stage/"
 cp package.json package-lock.json README.md SECURITY.md LICENSE "$stage/"
 (
   cd "$stage"
   npm ci --omit=dev --ignore-scripts --no-audit
   bash scripts/harden-dependencies.sh
+	pi_version="$(node -p 'require("./node_modules/@earendil-works/pi-coding-agent/package.json").version')"
+	[[ "$pi_version" == 0.83.0 ]] || {
+	  echo "ish expected bundled Pi 0.83.0, found $pi_version" >&2
+	  exit 1
+	}
+	[[ -x node_modules/.bin/pi ]] || {
+	  echo "ish could not install its bundled Pi executable" >&2
+	  exit 1
+	}
 )
 chmod 755 "$stage/bin/ish" "$stage/bin/intentd" "$stage/bin/ishctl" "$stage/scripts/service.sh"
 rm -rf "$libdir.previous"
@@ -56,6 +155,7 @@ else
 fi
 
 echo "installed ish under $prefix"
+echo "ready: Node $(node --version), zsh $zsh_version, bundled Pi 0.83.0"
 echo "run: $bindir/ish doctor"
 echo "start a shell: $bindir/ish"
 echo "default-shell instructions: $bindir/ish default-shell"

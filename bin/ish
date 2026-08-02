@@ -11,6 +11,7 @@ while [ -L "$self" ]; do
 done
 root=$(CDPATH= cd -- "$(dirname "$self")/.." && pwd)
 ctl="$root/dist/src/ctl-cli.js"
+zsh_command=${ISH_ZSH:-zsh}
 
 case "${1:-}" in
   config|doctor)
@@ -28,7 +29,7 @@ case "${1:-}" in
       /*) ;;
       *) ish_path=$(CDPATH= cd -- "$(dirname "$ish_path")" && pwd)/$(basename "$ish_path") ;;
     esac
-    zsh_path=$(command -v zsh 2>/dev/null || printf '%s' /bin/zsh)
+    zsh_path=$(command -v "$zsh_command" 2>/dev/null || printf '%s' "$zsh_command")
     printf '%s\n' "ish does not change your login shell automatically."
     printf '%s\n' "1. Verify first: ish doctor"
     printf '%s\n' "2. Ask an administrator to add this exact path to /etc/shells: $ish_path"
@@ -52,4 +53,4 @@ export PATH="$root/bin:$PATH"
 export ISH_USER_ZDOTDIR=${ZDOTDIR:-$HOME}
 export ISH_ZDOTDIR=$root/shell/zdot
 export ZDOTDIR=$ISH_ZDOTDIR
-exec zsh "$@"
+exec "$zsh_command" "$@"

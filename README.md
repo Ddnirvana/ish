@@ -5,158 +5,105 @@
 <p align="center">
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-2ea44f">
   <img alt="Node 22.19 or newer" src="https://img.shields.io/badge/node-%3E%3D22.19-339933">
-  <img alt="zsh shell" src="https://img.shields.io/badge/shell-zsh-f15a24">
+  <img alt="zsh 5.8 or newer" src="https://img.shields.io/badge/zsh-%3E%3D5.8-f15a24">
 </p>
 
 ![ish terminal demo](assets/ish-demo.gif)
 
-`ish` is a new shell for the agent era. It keeps zsh authoritative, so `ls`,
-pipelines, functions, completion, job control, and scripts behave like the shell
-you already trust. A deterministic local gateway sends only explicit or
-high-confidence intent to Pi. The internal `intentd` service keeps jobs,
-context, and live shell capsules available across terminals.
+ish is a shell for the agent era. Normal commands, pipelines, functions,
+completion, history, and job control run directly in zsh with no model call.
+Prefix a request with `?` when you want Pi to reason about it. The intentd user
+service keeps jobs, context, and live shell sessions available across terminals.
 
 ```text
-ls -la                         # native zsh; no model call
-? compare these two services  # Pi, without rewriting the visible command
-/capsules                     # one system view across live ish sessions
+ls -la                         # native zsh
+? explain why nginx restarted # Pi, without rewriting shell history
+/capsules                      # live ish sessions
 ```
-
-## Why ish
-
-- **No latency tax on known commands.** Native syntax stays on an LLM-free zsh
-  fast path.
-- **The agent lives inside the shell.** The shell owns editing, history,
-  sessions, process state, and execution; Pi supplies intelligence when asked.
-- **One system context.** `intentd` persists work and topology-scoped context
-  across terminals instead of creating a disposable shell inside each chat.
-- **Effects remain inspectable.** Pi starts with read-only tools. Recognized
-  destructive commands show an in-editor, one-shot approval bound to the exact
-  displayed command.
-- **Cross-shell actions fail explicitly.** Versioned shell capsules validate
-  identity, generation, cwd, expiry, typed input, and operation ID before work
-  runs inside a target zsh.
 
 ## Install
 
-ish supports single-user Linux servers and macOS hosts with Node.js 22.19+ and
-zsh 5.8+. Linux service management uses a systemd user unit; macOS uses a
-per-user LaunchAgent. tmux 3.2+ enables topology selectors and the multi-shell
-demo.
+ish supports macOS and Linux. It requires Node.js 22.19+ and zsh 5.8+. The
+installer checks both before changing anything. If zsh is missing, rerun with
+`--install-deps`; this explicitly allows the installer to use Homebrew, apt,
+dnf, or pacman. No separate Pi installation is needed: ish installs and uses its
+own pinned Pi 0.83.0 runtime without modifying a global Pi installation.
 
 ```bash
+git clone https://github.com/Ddnirvana/ish.git
+cd ish
 ./scripts/install.sh
+export PATH="$HOME/.local/bin:$PATH"
 ish doctor
-ish
 ```
 
-The installer uses the locked npm graph, installs under `~/.local` by default,
-and starts `intentd` through the host's user service manager when one is
-available. Use `ISH_PREFIX=/another/prefix` to select another prefix or
-`--no-service` to skip service setup. It does not use sudo or edit `.zshrc`,
-`/etc/shells`, or the login shell.
+The default prefix is `~/.local`. Use `ISH_PREFIX=/path` to choose another or
+`--no-service` to skip intentd service setup. Running the installer again
+performs an atomic upgrade. It does not change the login shell automatically.
 
-Run the installer again to upgrade atomically. Uninstall with:
+Tested combinations:
 
-```bash
-./scripts/uninstall.sh
-```
+| Platform | Node.js | zsh | Pi |
+| --- | --- | --- | --- |
+| macOS 14.6 | 23.9.0 | 5.9 | 0.83.0 bundled |
+| Debian bookworm | 22.23.2 | 5.9 | 0.83.0 bundled |
+| Debian server | 22.19.0 | 5.8 | 0.83.0 bundled |
 
-Configuration and state are preserved on uninstall so a reinstall can recover
-them. The uninstaller prints the two directories to remove for an explicit
-purge.
+See [Getting started](docs/getting-started.md) for upgrade, uninstall, and
+default-shell steps.
 
 ## Configure Pi
 
-Provider and model identifiers are safe to persist:
+Choose a provider and model, then enter the key at ish's hidden prompt:
 
 ```bash
 ish config set provider deepseek
 ish config set model deepseek-v4-flash
+ish config set key
 ish config show
-```
-
-Credentials are deliberately not accepted by `ish config`. Inject them into
-the shell process without putting the value in history or a project file:
-
-```zsh
-read -rs 'ISH_SECRET?API key: '; print
-export DEEPSEEK_API_KEY="$ISH_SECRET"
-unset ISH_SECRET
 ish doctor
 ```
 
-Direct `?` requests inherit the current shell environment. Durable Pi jobs
-inherit the environment of `intentd`. On Linux, deliberately import a temporary
-credential into the systemd user manager before restarting the service:
-
-```zsh
-systemctl --user import-environment DEEPSEEK_API_KEY
-ish service restart
-```
-
-On macOS, put it only in the current launchd user environment, then restart:
-
-```zsh
-launchctl setenv DEEPSEEK_API_KEY "$DEEPSEEK_API_KEY"
-ish service restart
-```
-
-Remove it with `systemctl --user unset-environment DEEPSEEK_API_KEY` or
-`launchctl unsetenv DEEPSEEK_API_KEY` when finished. Never place a credential
-in a unit, plist, shell startup file, or Git repository.
+The key is not passed as a command argument or printed by `config show`.
+Existing provider environment variables take precedence over the stored key.
+See [Configuration](docs/configuration.md) and Pi's official
+[provider guide](https://pi.dev/docs/latest/providers) for other providers,
+subscriptions, cloud settings, and custom models.
 
 ## Use
 
-### Native and agent input
+Start an interactive shell:
 
-Known shell syntax executes exactly where it was typed:
+```bash
+ish
+```
+
+Everything zsh already understands stays on the native path:
 
 ```text
 git status
 for log in *.log; do wc -l "$log"; done
 ```
 
-Prefix an intent with `?` or `/ask`. ish preserves that original line in zsh
-history and invokes Pi behind the editor; it never exposes an expanded
-`ishctl ask` command.
-
-```text
-? explain why nginx is restarting and cite the evidence
-```
-
-Pi receives an identity contract that describes the environment as **ish
-(intent shell)**, a new system-level shell built on zsh and Pi. Its default
-tools are read-only: `read`, `grep`, `find`, `ls`, and ish's bounded
-`system_inspect` extension. The extension measures exact file sizes and metadata
-without accepting command strings or following symlinked directories.
+Use `?` or `/ask` for intentional requests:
 
 ```text
 ? summarize the five largest files in this directory
+? explain the failed deployment and cite the evidence
 ```
 
-Direct-directory inspection is the default. Pi can request a recursive scan,
-but traversal is capped by depth, entry count, and time; a capped or
-error-affected result is explicitly marked incomplete.
-
-### Approval
-
-Commands matching the deterministic risk policy pause inside ZLE:
+Pi starts with read-only tools, including ish's bounded `system_inspect` tool.
+Commands recognized as destructive pause in the shell editor:
 
 ```text
 ! ish approval required [danger/recursive-delete] | rm -rf ./cache | ...
 y=run once e=edit n=cancel
 ```
 
-`y` runs only the displayed buffer. `e` returns it to the editor, where any
-change is classified again. `n`, Enter, and unknown keys cancel without an
-effect. The classifier is defense in depth, not a sandbox; read `SECURITY.md`
-before granting Pi additional tools through `ISH_PI_TOOLS`. The interaction
-ordering is informed by openEuler
-[Witty](https://mp.weixin.qq.com/s/lnRTcCLZeXadeYawfh_W6Q): read-only first,
-then explicit approval, then operation.
+`y` runs the displayed buffer once, `e` returns it for editing, and every other
+response cancels. The edited command is classified again.
 
-### Sessions and durable work
+## Durable Work and Sessions
 
 ```bash
 ishctl capsules
@@ -167,18 +114,8 @@ ishctl logs in_EXAMPLE
 ishctl cancel in_EXAMPLE
 ```
 
-Preview a read-only action against a topology selector, then dispatch its stable
-operation ID:
-
-```bash
-ishctl action session:prod --class observation -- uptime
-ishctl action-dispatch op_EXAMPLE
-```
-
-Mixed target results remain `partial`; restart ambiguity remains `uncertain`;
-neither is collapsed into success or retried automatically.
-
-## Manage the service
+Native commands and direct `?` requests continue to work if intentd is stopped.
+Durable jobs, shared context, and capsules require the service.
 
 ```bash
 ish service status
@@ -188,80 +125,19 @@ ish service stop
 ish service start
 ```
 
-The systemd unit or macOS LaunchAgent is user-scoped, starts with the login
-session, restarts on failure, and contains no provider credential. On Linux,
-`logs` follows the user journal; on macOS, it follows
-`~/.local/state/ish/logs/intentd*.log`. Native commands and direct agent
-requests keep working when `intentd` is stopped; durable jobs, context, and
-capsules do not.
+Linux uses a systemd user unit. macOS uses a per-user LaunchAgent. Both are
+installed without sudo and start at login.
 
-## Make ish the login shell
+## Documentation
 
-Try `ish` interactively first, then print the exact host-specific procedure:
-
-```bash
-ish doctor
-ish default-shell
-```
-
-The procedure asks an administrator to add the resolved `ish` path to
-`/etc/shells`, then uses `chsh -s`. It also prints the zsh rollback command.
-ish never performs either privileged or account-changing step automatically.
-
-## Architecture
-
-| Component | Responsibility |
-| --- | --- |
-| zsh + `shell/ish.zsh` | Authoritative editor, history, native execution, prompt, approvals, and shell-resident admission |
-| Pi | Agent loop, provider integration, and read-only reasoning tools |
-| `intentd` | User daemon for durable jobs, scoped context, capsules, action state, and restart reconciliation |
-| `ishctl` | Inspectable local control and data plane |
-
-The research action path does not use `tmux send-keys`. A private FIFO wakes a
-ZLE widget in each target shell; that widget validates the versioned action and
-executes admitted work inside its own zsh. Raw tmux text injection remains only
-as an explicitly unsafe comparison baseline.
-
-## Develop
-
-```bash
-npm ci --no-audit
-npm audit
-npm test
-npm run demo
-```
-
-The suite covers deterministic routing, terminal formatting, real zsh ZLE,
-approval cancellation/execution, capsule races, restart recovery, context,
-durable jobs, real isolated tmux panes, configuration, launcher compatibility,
-systemd and launchd lifecycle, and disposable-prefix install/upgrade/uninstall.
-The post-install step also verifies and applies the temporary Pi dependency
-hardening documented in `SECURITY.md`.
-
-The terminal GIF is reproducible with
-[VHS](https://github.com/charmbracelet/vhs):
-
-```bash
-vhs demo/ish.tape
-```
-
-The tape runs the real shell, daemon, routing, capsule, and approval paths. Its
-model response uses `demo/pi-fixture.mjs` so recording is deterministic and
-never needs a credential.
-
-## Current scope
-
-ish currently targets one trusted user on one Linux or macOS host. The risk
-classifier is not complete effect inference, external effects are not
-transactional, uncertain operations are not automatically retried, and
-multi-user or fleet authorization is not implemented. Engineering readiness
-does not establish product demand or research novelty.
+- [Getting started](docs/getting-started.md)
+- [Configuration](docs/configuration.md)
+- [Commands](docs/commands.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Security](SECURITY.md)
 
 ## Acknowledgments
 
-ish stands on two exceptional projects: [zsh](https://www.zsh.org/) provides
-the authoritative shell semantics, editor, history, and job control;
-[Pi](https://github.com/earendil-works/pi) provides the agent runtime, provider
-integration, and terminal intelligence. ish is a new shell built from their
-strengths, and both projects are explicitly credited rather than hidden behind
-the integration.
+ish is built on [zsh](https://www.zsh.org/) for shell semantics, editing,
+history, and job control, and [Pi](https://github.com/earendil-works/pi) for the
+agent runtime, provider integration, and terminal intelligence.
