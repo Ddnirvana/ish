@@ -59,11 +59,17 @@ export ISH_ZDOTDIR=$root/shell/zdot
 export ZDOTDIR=$ISH_ZDOTDIR
 
 if [ "$#" -eq 0 ] && [ -t 0 ] && [ -t 1 ]; then
+  pty_platform=${ISH_PTY_PLATFORM:-$(uname -s)}
+  expect_command=${ISH_EXPECT:-expect}
   if [ "${ISH_TRANSCRIPT_CAPTURE:-1}" = 0 ]; then
     export ISH_TRANSCRIPT_STATUS=disabled-by-user
   elif [ "${ISH_PTY_ACTIVE:-0}" = 1 ]; then
     :
-  elif ! command -v script >/dev/null 2>&1; then
+  elif [ "$pty_platform" = Darwin ] && ! command -v "$expect_command" >/dev/null 2>&1; then
+    export ISH_TRANSCRIPT_STATUS=unavailable-macos-expect
+  elif [ "$pty_platform" = Darwin ] && [ ! -f "$root/scripts/macos-pty.exp" ]; then
+    export ISH_TRANSCRIPT_STATUS=unavailable-macos-pty-helper
+  elif [ "$pty_platform" != Darwin ] && ! command -v script >/dev/null 2>&1; then
     export ISH_TRANSCRIPT_STATUS=unavailable-script-command
   elif [ ! -f "$root/dist/src/transcript-recorder.js" ]; then
     export ISH_TRANSCRIPT_STATUS=unavailable-recorder
@@ -77,6 +83,8 @@ if [ "$#" -eq 0 ] && [ -t 0 ] && [ -t 1 ]; then
     fifo=$transcript_dir/output.fifo
     events=$transcript_dir/events.jsonl
     meta=$transcript_dir/meta
+    pty_slave_file=""
+    [ "$pty_platform" != Darwin ] || pty_slave_file=$transcript_dir/macos-pty-slave
     mkdir -p -m 700 "$meta"
     mkfifo -m 600 "$fifo"
     export ISH_TRANSCRIPT_EVENTS=$events
@@ -85,7 +93,7 @@ if [ "$#" -eq 0 ] && [ -t 0 ] && [ -t 1 ]; then
     export ISH_PTY_ACTIVE=1
     export ISH_ZSH_CHILD=$zsh_command
     exec 9<>"$fifo"
-    "$node_command" "$root/dist/src/transcript-recorder.js" "$fifo" "$events" "$meta" 9>&- &
+    "$node_command" "$root/dist/src/transcript-recorder.js" "$fifo" "$events" "$meta" "$pty_slave_file" 9>&- &
     recorder_pid=$!
     cleanup_transcript() {
       exec 9>&- 2>/dev/null || true
@@ -95,12 +103,12 @@ if [ "$#" -eq 0 ] && [ -t 0 ] && [ -t 1 ]; then
     }
     trap cleanup_transcript EXIT HUP INT TERM
     transcript_status=0
-    case $(uname -s) in
+    case "$pty_platform" in
       Linux)
         script -qef -O "$fifo" -c 'exec "$ISH_ZSH_CHILD"' 9>&- || transcript_status=$?
         ;;
       Darwin)
-        script -qF "$fifo" "$zsh_command" 9>&- || transcript_status=$?
+        "$expect_command" "$root/scripts/macos-pty.exp" "$fifo" "$zsh_command" "$pty_slave_file" 9>&- || transcript_status=$?
         ;;
       *)
         transcript_status=125

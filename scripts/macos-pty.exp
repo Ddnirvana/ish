@@ -1,0 +1,34 @@
+#!/usr/bin/expect -f
+
+if {$argc != 3} {
+  puts stderr "usage: macos-pty.exp OUTPUT COMMAND SLAVE_FILE"
+  exit 2
+}
+
+set output [lindex $argv 0]
+set command [lindex $argv 1]
+set slave_file [lindex $argv 2]
+set timeout -1
+log_file -noappend $output
+spawn -noecho $command
+
+proc sync_winsize {} {
+  global spawn_out
+  if {![info exists spawn_out(slave,name)]} {
+    return
+  }
+  if {[catch {set rows [stty rows]}] || [catch {set columns [stty columns]}]} {
+    return
+  }
+  catch {stty rows $rows columns $columns < $spawn_out(slave,name)}
+}
+
+sync_winsize
+trap {sync_winsize} WINCH
+set slave_channel [open $slave_file w]
+puts -nonewline $slave_channel $spawn_out(slave,name)
+close $slave_channel
+interact
+
+set result [wait]
+exit [lindex $result 3]

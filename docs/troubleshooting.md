@@ -78,3 +78,14 @@ ish -f
 If that succeeds, isolate the failing plugin or startup command in `.zshrc`.
 Run `ish default-shell` to print the rollback command if ish is already the login
 shell.
+
+## Vim Or Another Full-Screen Program Renders Incorrectly
+
+Upgrade ish and rerun the installer. Current macOS releases use the system
+Expect PTY bridge so terminal resize events reach Vim, less, top, and similar
+full-screen programs. Confirm the helper with `ish doctor`; its `terminal
+capture` line should be `ok`.
+
+If Expect is unavailable, ish runs zsh directly to preserve terminal integrity
+and reports native-output context as unavailable. `ISH_TRANSCRIPT_CAPTURE=0
+ish` also starts this direct-terminal mode explicitly.

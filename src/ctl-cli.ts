@@ -334,6 +334,17 @@ async function run(command = "help", rawArgs: string[]): Promise<void> {
 			const zsh = spawnSync(process.env.ISH_ZSH ?? "zsh", ["--version"], { encoding: "utf8" });
 			const zshVersion = /zsh\s+([0-9.]+)/.exec(zsh.stdout)?.[1];
 			check(zsh.status === 0 && zshVersion && versionAtLeast(zshVersion, "5.8") ? "ok" : "fail", "zsh", zsh.status === 0 ? zsh.stdout.trim() : "not found");
+			if (process.platform === "darwin") {
+				const expectCommand = process.env.ISH_EXPECT ?? "expect";
+				const expect = spawnSync(expectCommand, ["-v"], { encoding: "utf8" });
+				check(
+					expect.status === 0 ? "ok" : "warn",
+					"terminal capture",
+					expect.status === 0
+						? `${expectCommand} (${(expect.stdout || expect.stderr).trim()})`
+						: "Expect is unavailable; ish will preserve direct zsh terminal behavior but native output will not reach later agent requests",
+				);
+			}
 			try {
 				const pi = resolvePiBinary();
 				const version = spawnSync(pi, ["--version"], { encoding: "utf8", env: process.env });

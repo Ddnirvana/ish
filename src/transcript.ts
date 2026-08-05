@@ -1,6 +1,9 @@
 import { StringDecoder } from "node:string_decoder";
+import { spawnSync } from "node:child_process";
+import { closeSync, openSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { WriteStream } from "node:tty";
 
 const MARKER = /\u001b\]777;ish;(start|end);([A-Za-z0-9_.-]+)(?:;(-?\d+))?\u0007/;
 const MARKER_TAIL = 256;
@@ -180,8 +183,58 @@ async function captureToEvent(metaDir: string, capture: CompletedCapture): Promi
 	};
 }
 
-export async function runTranscriptRecorder(fifo: string, eventsFile: string, metaDir: string): Promise<void> {
+function startMacosPtyMonitor(slaveFile?: string): () => void {
+	if (process.platform !== "darwin" || !slaveFile) return () => {};
+	let outer: WriteStream;
+	try {
+		outer = new WriteStream(openSync("/dev/tty", "r+"));
+	} catch {
+		return () => {};
+	}
+	let slave = "";
+	let previous = "";
+	const timer = setInterval(() => {
+		if (!slave) {
+			try {
+				slave = readFileSync(slaveFile, "utf8").trim();
+			} catch {
+				return;
+			}
+			if (!slave.startsWith("/dev/tty")) {
+				slave = "";
+				return;
+			}
+		}
+		const [columns, rows] = outer.getWindowSize();
+		if (!rows || !columns || `${rows}:${columns}` === previous) return;
+		let slaveFd: number | undefined;
+		try {
+			slaveFd = openSync(slave, "r+");
+			const result = spawnSync("stty", ["rows", String(rows), "columns", String(columns)], {
+				stdio: [slaveFd, "ignore", "ignore"],
+			});
+			if (result.status === 0) previous = `${rows}:${columns}`;
+		} catch {
+			// The child PTY may be closing while the recorder drains its FIFO.
+		} finally {
+			if (slaveFd !== undefined) closeSync(slaveFd);
+		}
+	}, 50);
+	timer.unref();
+	return () => {
+		clearInterval(timer);
+		outer.destroy();
+	};
+}
+
+export async function runTranscriptRecorder(
+	fifo: string,
+	eventsFile: string,
+	metaDir: string,
+	ptySlaveFile?: string,
+): Promise<void> {
 	const { createReadStream } = await import("node:fs");
+	const stopPtyMonitor = startMacosPtyMonitor(ptySlaveFile);
 	let writes = Promise.resolve();
 	const parser = new TranscriptStreamParser((capture) => {
 		writes = writes.then(async () => {
@@ -189,9 +242,13 @@ export async function runTranscriptRecorder(fifo: string, eventsFile: string, me
 			if (event) await persistEvent(eventsFile, event);
 		});
 	});
-	for await (const chunk of createReadStream(fifo)) parser.feed(chunk as Buffer);
-	parser.end();
-	await writes;
+	try {
+		for await (const chunk of createReadStream(fifo)) parser.feed(chunk as Buffer);
+		parser.end();
+		await writes;
+	} finally {
+		stopPtyMonitor();
+	}
 }
 
 export async function readNativeTranscripts(file = process.env.ISH_TRANSCRIPT_EVENTS): Promise<NativeTranscript[]> {

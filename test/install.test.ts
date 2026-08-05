@@ -117,6 +117,7 @@ esac
 		"installed prefix must include the compiled system_inspect extension",
 	);
 	assert.equal(await exists(path.join(prefix, "lib", "ish", "docs", "getting-started.md")), true);
+	assert.equal(await exists(path.join(prefix, "lib", "ish", "scripts", "macos-pty.exp")), true);
 	const installedNode = await readlink(path.join(prefix, "lib", "ish", "runtime", "node"));
 	assert.equal(path.isAbsolute(installedNode), true);
 	assert.equal(await exists(installedNode), true);
