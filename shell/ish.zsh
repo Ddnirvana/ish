@@ -390,8 +390,9 @@ _ish_accept_line() {
         setopt hist_ignore_space
         _ISH_RESTORE_HIST_IGNORE_SPACE=1
       fi
-      BUFFER=" :"
-      CURSOR=2
+      PREDISPLAY="$line"
+      BUFFER=""
+      CURSOR=0
       zle .accept-line
       return
       ;;
@@ -402,8 +403,9 @@ _ish_accept_line() {
         setopt hist_ignore_space
         _ISH_RESTORE_HIST_IGNORE_SPACE=1
       fi
-      BUFFER=" :"
-      CURSOR=2
+      PREDISPLAY="$line"
+      BUFFER=""
+      CURSOR=0
       zle .accept-line
       return
       ;;

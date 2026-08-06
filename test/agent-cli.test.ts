@@ -114,7 +114,7 @@ test("agent CLI reports a transcript handoff timeout explicitly", async (t) => {
 	assert.match(result.stdout, /capture_status: incomplete-recorder-timeout/);
 });
 
-test("leading question routing stays invisible in a real zsh editor", async (t) => {
+test("agent input remains visible while routing stays private in a real zsh editor", async (t) => {
 	const hasTmux = spawnSync("tmux", ["-V"], { stdio: "ignore" }).status === 0;
 	if (!hasTmux) return t.skip("tmux is unavailable");
 	const root = await mkdtemp(path.join(os.tmpdir(), "ish-zle-ui-"));
@@ -135,6 +135,8 @@ test("leading question routing stays invisible in a real zsh editor", async (t) 
 	assert.equal(result.status, 0, result.stderr);
 	tmux(["send-keys", "-t", "ux:0.0", `source ${shell}`, "Enter"]);
 	await new Promise((resolve) => setTimeout(resolve, 100));
+	tmux(["send-keys", "-t", "ux:0.0", "PROMPT='ISH_TEST> '", "Enter"]);
+	await new Promise((resolve) => setTimeout(resolve, 50));
 	tmux(["send-keys", "-t", "ux:0.0", "? what shell is this?", "Enter"]);
 	let recorded = "";
 	const deadline = Date.now() + 3000;
@@ -148,6 +150,8 @@ test("leading question routing stays invisible in a real zsh editor", async (t) 
 	assert.equal(recorded, "what shell is this?");
 	result = tmux(["capture-pane", "-p", "-t", "ux:0.0", "-S", "-100"]);
 	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /^ISH_TEST> \? what shell is this\?$/m);
 	assert.match(result.stdout, /agent-reply:what shell is this\?/);
+	assert.doesNotMatch(result.stdout, /^ISH_TEST>\s+:\s*$/m);
 	assert.doesNotMatch(result.stdout, /ishctl ask --/);
 });
