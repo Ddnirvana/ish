@@ -1,5 +1,6 @@
 import { Type } from "typebox";
 import { registerSystemInspect } from "../extensions/system-inspect/index.js";
+import { registerSystemObserve } from "../extensions/system-observe/index.js";
 import { IntentClient } from "./client.js";
 import { defaultSocketPath } from "./paths.js";
 import type { PiExtensionAPI, PiExtensionContext, PiToolInfo } from "./pi-types.js";
@@ -12,6 +13,12 @@ const DEFAULT_ACTIVE_TOOLS = [
 	"ls",
 	"intent_job",
 	"system_inspect",
+	"shell_observe",
+	"process_observe",
+	"log_query",
+	"service_observe",
+	"network_observe",
+	"git_inspect",
 	"list_capabilities",
 	"activate_capabilities",
 ];
@@ -136,6 +143,7 @@ export default function (pi: PiExtensionAPI) {
 	});
 
 	registerSystemInspect(pi);
+	registerSystemObserve(pi);
 
 	pi.registerTool<CapabilityListParams>({
 		name: "list_capabilities",

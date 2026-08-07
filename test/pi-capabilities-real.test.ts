@@ -62,6 +62,12 @@ test("Pi registers extension tools, activates a narrow baseline, and ignores unt
 		"ls",
 		"intent_job",
 		"system_inspect",
+		"shell_observe",
+		"process_observe",
+		"log_query",
+		"service_observe",
+		"network_observe",
+		"git_inspect",
 		"list_capabilities",
 		"activate_capabilities",
 	]);

@@ -44,13 +44,22 @@ test("Pi adapter registers durable, inspection, and staged capability tools", as
 	assert.deepEqual(tools.map((tool) => tool.name), [
 		"intent_job",
 		"system_inspect",
+		"shell_observe",
+		"process_observe",
+		"log_query",
+		"service_observe",
+		"network_observe",
+		"git_inspect",
 		"list_capabilities",
 		"activate_capabilities",
 	]);
 	assert.deepEqual([...commands.keys()], ["intent"]);
 
 	await handlers.get("session_start")?.();
-	assert.deepEqual(active, ["read", "grep", "find", "ls", "intent_job", "system_inspect", "list_capabilities", "activate_capabilities"]);
+	assert.deepEqual(active, [
+		"read", "grep", "find", "ls", "intent_job", "system_inspect", "shell_observe", "process_observe",
+		"log_query", "service_observe", "network_observe", "git_inspect", "list_capabilities", "activate_capabilities",
+	]);
 
 	const list = tools.find((tool) => tool.name === "list_capabilities");
 	assert.ok(list);
@@ -66,7 +75,11 @@ test("Pi adapter registers durable, inspection, and staged capability tools", as
 	const activate = tools.find((tool) => tool.name === "activate_capabilities");
 	assert.ok(activate);
 	const result = await activate.execute("call", { names: ["package_tool", "bash", "missing"] });
-	assert.deepEqual(active, ["read", "grep", "find", "ls", "intent_job", "system_inspect", "list_capabilities", "activate_capabilities", "package_tool"]);
+	assert.deepEqual(active, [
+		"read", "grep", "find", "ls", "intent_job", "system_inspect", "shell_observe", "process_observe",
+		"log_query", "service_observe", "network_observe", "git_inspect", "list_capabilities", "activate_capabilities",
+		"package_tool",
+	]);
 	assert.deepEqual((result as { details: unknown }).details, {
 		activated: ["package_tool"],
 		refused: ["bash"],

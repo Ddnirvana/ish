@@ -110,7 +110,12 @@ exits. Credential-like commands are excluded; set `ISH_TRANSCRIPT_CAPTURE=0`
 before starting ish to disable capture. While Pi is silent, a changing-color
 working indicator remains active and clears when output begins.
 
-Pi starts with read-only tools, including ish's bounded `system_inspect` tool.
+Pi starts with read-only tools for prior shell output, exact files, processes,
+logs, systemd services, listening ports, and Git repositories. Results expose
+the relevant bounds and whether the observation is complete; external command
+observations also report timeout, byte limit, and platform support. This lets
+Pi investigate common shell and server questions without enabling a second
+arbitrary-command shell.
 Tools supplied by installed Pi extensions remain discoverable without crowding
 the default prompt; Pi can activate the relevant extension tool when a request
 needs it. Pi's built-in `bash`, `edit`, and `write` tools remain inactive unless

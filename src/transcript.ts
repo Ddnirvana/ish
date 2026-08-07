@@ -7,7 +7,7 @@ import { WriteStream } from "node:tty";
 
 const MARKER = /\u001b\]777;ish;(start|end);([A-Za-z0-9_.-]+)(?:;(-?\d+))?\u0007/;
 const MARKER_TAIL = 256;
-export const MAX_TRANSCRIPT_OUTPUT_BYTES = 24 * 1024;
+export const MAX_TRANSCRIPT_OUTPUT_BYTES = 512 * 1024;
 export const MAX_TRANSCRIPT_EVENTS = 12;
 export const MAX_PROMPT_CONTEXT_BYTES = 32 * 1024;
 
@@ -251,7 +251,10 @@ export async function runTranscriptRecorder(
 	}
 }
 
-export async function readNativeTranscripts(file = process.env.ISH_TRANSCRIPT_EVENTS): Promise<NativeTranscript[]> {
+export async function readNativeTranscripts(
+	file = process.env.ISH_TRANSCRIPT_EVENTS,
+	limit = 3,
+): Promise<NativeTranscript[]> {
 	if (!file) return [];
 	return (await optionalRead(file))
 		.split("\n")
@@ -264,7 +267,7 @@ export async function readNativeTranscripts(file = process.env.ISH_TRANSCRIPT_EV
 				return [];
 			}
 		})
-		.slice(-3);
+		.slice(-Math.max(1, Math.min(MAX_TRANSCRIPT_EVENTS, limit)));
 }
 
 export async function readNativeTranscriptsWhenReady(
