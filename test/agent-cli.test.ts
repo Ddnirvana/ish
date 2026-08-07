@@ -25,7 +25,8 @@ test("agent CLI passes the ish identity to Pi and renders bounded status", () =>
 	assert.match(result.stdout, /ish \(intent shell\)/);
 	assert.match(result.stdout, /--extension/);
 	assert.match(result.stdout, /pi-extension\.js/);
-	assert.match(result.stdout, /read,grep,find,ls,system_inspect/);
+	assert.match(result.stdout, /--no-builtin-tools/);
+	assert.doesNotMatch(result.stdout, /--tools/);
 	assert.match(result.stdout, /^ok ish done in /m);
 });
 

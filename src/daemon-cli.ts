@@ -5,6 +5,7 @@ import { readConfig } from "./config.js";
 import { piEnvironment } from "./credentials.js";
 import { IntentDaemon } from "./daemon.js";
 import { defaultSocketPath, defaultStateDir } from "./paths.js";
+import { buildPiArgs } from "./pi-driver.js";
 import { ISH_SYSTEM_PROMPT } from "./ui.js";
 
 interface CliOptions {
@@ -68,20 +69,14 @@ const daemon = new IntentDaemon({
 		command: options.runner,
 		args: async () => {
 			const config = await readConfig();
-			const args = [...options.runnerArgs];
-			if (config.provider) args.push("--provider", config.provider);
-			if (config.model) args.push("--model", config.model);
-			args.push(
-				"--session-dir",
-				process.env.ISH_PI_SESSION_DIR ?? path.join(defaultStateDir(), "pi-sessions"),
-				"--extension",
+			return buildPiArgs({
+				sessionDir: process.env.ISH_PI_SESSION_DIR ?? path.join(defaultStateDir(), "pi-sessions"),
 				extension,
-				"--append-system-prompt",
-				ISH_SYSTEM_PROMPT,
-				"--tools",
-				process.env.ISH_PI_TOOLS ?? "read,grep,find,ls,system_inspect",
-			);
-			return args;
+				systemPrompt: ISH_SYSTEM_PROMPT,
+				provider: config.provider,
+				model: config.model,
+				prefixArgs: options.runnerArgs,
+			});
 		},
 		environment: async () => piEnvironment(await readConfig()),
 	},

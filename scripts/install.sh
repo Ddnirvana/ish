@@ -168,8 +168,8 @@ ln -s "$node_bin" "$stage/runtime/node"
   "$npm_bin" ci --omit=dev --ignore-scripts --no-audit
   bash scripts/harden-dependencies.sh
 	pi_version="$(node -p 'require("./node_modules/@earendil-works/pi-coding-agent/package.json").version')"
-	[[ "$pi_version" == 0.83.0 ]] || {
-	  echo "ish expected bundled Pi 0.83.0, found $pi_version" >&2
+	[[ "$pi_version" == 0.84.1 ]] || {
+	  echo "ish expected bundled Pi 0.84.1, found $pi_version" >&2
 	  exit 1
 	}
 	[[ -x node_modules/.bin/pi ]] || {
@@ -202,7 +202,7 @@ else
 fi
 
 echo "installed ish under $prefix"
-echo "ready: Node $($node_bin --version), zsh $zsh_version, bundled Pi 0.83.0"
+echo "ready: Node $($node_bin --version), zsh $zsh_version, bundled Pi 0.84.1"
 echo "run: $bindir/ish doctor"
 echo "start a shell: $bindir/ish"
 echo "default-shell instructions: $bindir/ish default-shell"

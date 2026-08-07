@@ -45,6 +45,20 @@ login, cloud configuration, custom providers, and custom models are documented
 in Pi's official [provider guide](https://pi.dev/docs/latest/providers) and
 [custom model guide](https://pi.dev/docs/latest/models).
 
+## Pi Capabilities
+
+ish keeps installed Pi extension tools registered but activates only its compact
+read-only baseline initially. The agent can discover and activate a relevant
+extension tool during a request. For an advanced per-process override, set a
+comma-separated baseline before starting ish:
+
+```bash
+ISH_PI_TOOLS=read,grep,find,ls,system_inspect,list_capabilities,activate_capabilities ish
+```
+
+Adding Pi's built-in `bash`, `edit`, or `write` here is an explicit opt-in; those
+tools do not pass through ish's native command editor.
+
 ## Paths
 
 | Data | Default path | Override |

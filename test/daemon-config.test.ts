@@ -72,6 +72,8 @@ test("intentd reloads provider, model, and stored credential for every job", asy
 	assert.match(output, /--provider.*deepseek/);
 	assert.match(output, /--model.*first-model/);
 	assert.match(output, /--append-system-prompt/);
+	assert.match(output, /--no-builtin-tools/);
+	assert.doesNotMatch(output, /--tools/);
 	assert.match(output, /"credentialVariable":"DEEPSEEK_API_KEY"/);
 	assert.doesNotMatch(output, /test-key-not-secret/);
 

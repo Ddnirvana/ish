@@ -5,7 +5,18 @@ export interface PiExtensionContext {
 	};
 }
 
+export interface PiToolInfo {
+	name: string;
+	description: string;
+	sourceInfo?: {
+		source: string;
+		path: string;
+		scope: string;
+	};
+}
+
 export interface PiExtensionAPI {
+	on(event: "session_start", handler: () => void | Promise<void>): void;
 	registerTool<TParams extends Record<string, unknown>>(tool: {
 		name: string;
 		label: string;
@@ -26,4 +37,7 @@ export interface PiExtensionAPI {
 			handler(args: string, ctx: PiExtensionContext): Promise<void>;
 		},
 	): void;
+	getActiveTools(): string[];
+	getAllTools(): PiToolInfo[];
+	setActiveTools(toolNames: string[]): void;
 }

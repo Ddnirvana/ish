@@ -7,7 +7,7 @@
 - zsh 5.8 or newer
 - tmux 3.2 or newer for multi-session selectors
 
-Pi 0.83.0 is pinned and installed inside ish. A separate global Pi installation
+Pi 0.84.1 is pinned and installed inside ish. A separate global Pi installation
 is not required or modified.
 
 ## Install

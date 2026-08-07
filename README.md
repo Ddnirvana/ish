@@ -31,7 +31,7 @@ location. If no compatible Node.js exists, the installer stops with `Nothing
 was installed` and a recovery command. If zsh is missing, rerun with
 `--install-deps`; this explicitly allows the installer to use Homebrew, apt,
 dnf, or pacman. No separate Pi installation is needed: ish installs and uses
-its own pinned Pi 0.83.0 runtime without modifying a global Pi installation.
+its own pinned Pi 0.84.1 runtime without modifying a global Pi installation.
 
 ```bash
 git clone https://github.com/Ddnirvana/ish.git
@@ -54,9 +54,9 @@ Tested combinations:
 
 | Platform | Node.js | zsh | Pi |
 | --- | --- | --- | --- |
-| macOS 14.6 | 23.9.0 | 5.9 | 0.83.0 bundled |
-| Debian bookworm | 22.23.2 | 5.9 | 0.83.0 bundled |
-| Debian server | 22.19.0 | 5.8 | 0.83.0 bundled |
+| macOS 14.6 | 23.9.0 | 5.9 | 0.84.1 bundled |
+| Debian bookworm | 22.23.2 | 5.9 | 0.84.1 bundled |
+| Debian server | 22.19.0 | 5.8 | 0.84.1 bundled |
 
 See [Getting started](docs/getting-started.md) for upgrade, uninstall, and
 default-shell steps.
@@ -111,6 +111,10 @@ before starting ish to disable capture. While Pi is silent, a changing-color
 working indicator remains active and clears when output begins.
 
 Pi starts with read-only tools, including ish's bounded `system_inspect` tool.
+Tools supplied by installed Pi extensions remain discoverable without crowding
+the default prompt; Pi can activate the relevant extension tool when a request
+needs it. Pi's built-in `bash`, `edit`, and `write` tools remain inactive unless
+the user explicitly includes them in `ISH_PI_TOOLS`.
 Commands recognized as destructive pause in the shell editor:
 
 ```text

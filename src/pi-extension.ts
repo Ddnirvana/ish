@@ -2,8 +2,59 @@ import { Type } from "typebox";
 import { registerSystemInspect } from "../extensions/system-inspect/index.js";
 import { IntentClient } from "./client.js";
 import { defaultSocketPath } from "./paths.js";
-import type { PiExtensionAPI, PiExtensionContext } from "./pi-types.js";
+import type { PiExtensionAPI, PiExtensionContext, PiToolInfo } from "./pi-types.js";
 import type { IntentRecord } from "./types.js";
+
+const DEFAULT_ACTIVE_TOOLS = [
+	"read",
+	"grep",
+	"find",
+	"ls",
+	"intent_job",
+	"system_inspect",
+	"list_capabilities",
+	"activate_capabilities",
+];
+const MANUAL_ONLY_TOOLS = new Set(["bash", "edit", "write"]);
+
+const CapabilityListParams = Type.Object({
+	query: Type.Optional(Type.String({ description: "Optional name, description, or source filter" })),
+});
+
+const CapabilityActivateParams = Type.Object({
+	names: Type.Array(Type.String(), {
+		minItems: 1,
+		maxItems: 12,
+		description: "Installed tool names returned by list_capabilities",
+	}),
+});
+
+interface CapabilityListParams extends Record<string, unknown> {
+	query?: string;
+}
+
+interface CapabilityActivateParams extends Record<string, unknown> {
+	names: string[];
+}
+
+function unique(values: string[]): string[] {
+	return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function configuredActiveTools(): string[] {
+	return unique((process.env.ISH_PI_TOOLS ?? DEFAULT_ACTIVE_TOOLS.join(",")).split(","));
+}
+
+function source(tool: PiToolInfo): string {
+	return tool.sourceInfo?.source ?? "unknown";
+}
+
+function matchingTools(pi: PiExtensionAPI, query?: string): PiToolInfo[] {
+	const needle = query?.trim().toLowerCase();
+	return pi.getAllTools()
+		.filter((tool) => !needle || `${tool.name} ${tool.description} ${source(tool)}`.toLowerCase().includes(needle))
+		.sort((left, right) => left.name.localeCompare(right.name));
+}
 
 const IntentParams = Type.Object({
 	action: Type.Union([
@@ -85,6 +136,49 @@ export default function (pi: PiExtensionAPI) {
 	});
 
 	registerSystemInspect(pi);
+
+	pi.registerTool<CapabilityListParams>({
+		name: "list_capabilities",
+		label: "List Capabilities",
+		description:
+			"List tools registered by Pi and installed extensions, including whether each is active. Use this when the current tools cannot complete a request.",
+		parameters: CapabilityListParams,
+		async execute(_toolCallId, params) {
+			const active = new Set(pi.getActiveTools());
+			const tools = matchingTools(pi, params.query).map((tool) => ({
+				name: tool.name,
+				description: tool.description,
+				source: source(tool),
+				active: active.has(tool.name),
+				manualOnly: MANUAL_ONLY_TOOLS.has(tool.name),
+			}));
+			return { content: [{ type: "text", text: JSON.stringify({ tools }, null, 2) }], details: { tools } };
+		},
+	});
+
+	pi.registerTool<CapabilityActivateParams>({
+		name: "activate_capabilities",
+		label: "Activate Capabilities",
+		description:
+			"Activate installed extension tools for the current Pi session. Call list_capabilities first. Built-in shell mutation tools require explicit ish configuration and cannot be activated here.",
+		parameters: CapabilityActivateParams,
+		async execute(_toolCallId, params) {
+			const available = new Set(pi.getAllTools().map((tool) => tool.name));
+			const requested = unique(params.names);
+			const refused = requested.filter((name) => MANUAL_ONLY_TOOLS.has(name));
+			const unknown = requested.filter((name) => !available.has(name));
+			const activated = requested.filter((name) => available.has(name) && !MANUAL_ONLY_TOOLS.has(name));
+			const active = unique([...pi.getActiveTools(), ...activated]);
+			pi.setActiveTools(active);
+			const result = { activated, refused, unknown, active };
+			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+		},
+	});
+
+	pi.on("session_start", () => {
+		const available = new Set(pi.getAllTools().map((tool) => tool.name));
+		pi.setActiveTools(configuredActiveTools().filter((name) => available.has(name)));
+	});
 
 	pi.registerCommand("intent", {
 		description: "Control durable cross-session Pi jobs",

@@ -44,8 +44,8 @@ if [ "$1" = ci ]; then
   case "$PWD" in
     *.stage.*)
       mkdir -p "$PWD/node_modules/@earendil-works/pi-coding-agent" "$PWD/node_modules/.bin"
-      printf '%s\n' '{"version":"0.83.0"}' > "$PWD/node_modules/@earendil-works/pi-coding-agent/package.json"
-      printf '%s\n' '#!/bin/sh' 'test "$(node --version)" != v12.22.9' 'echo pi 0.83.0' > "$PWD/node_modules/.bin/pi"
+      printf '%s\n' '{"version":"0.84.1"}' > "$PWD/node_modules/@earendil-works/pi-coding-agent/package.json"
+      printf '%s\n' '#!/bin/sh' 'test "$(node --version)" != v12.22.9' 'echo pi 0.84.1' > "$PWD/node_modules/.bin/pi"
       chmod 755 "$PWD/node_modules/.bin/pi"
       ;;
   esac
@@ -100,7 +100,7 @@ esac
 	result = spawnSync(install, ["--install-deps", "--no-service"], { encoding: "utf8", env });
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.stdout, /installing zsh with Homebrew/);
-	assert.match(result.stdout, /bundled Pi 0\.83\.0/);
+	assert.match(result.stdout, /bundled Pi 0\.84\.1/);
 	for (let iteration = 0; iteration < 2; iteration += 1) {
 		const result = spawnSync(install, ["--no-service"], { encoding: "utf8", env });
 		assert.equal(result.status, 0, result.stderr);

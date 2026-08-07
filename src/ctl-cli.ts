@@ -15,6 +15,7 @@ import { ISH_SYSTEM_PROMPT, renderAgentActivityFrame, renderAgentEnd, renderAgen
 import { formatNativeContext, readNativeTranscriptsWhenReady } from "./transcript.js";
 import { cwdToken, type ActionRecord, type ActionTargetState, type EffectClass } from "./capsules.js";
 import { defaultConfigPath, readConfig, updateConfig, type IshConfigKey } from "./config.js";
+import { buildPiArgs, TESTED_PI_VERSION } from "./pi-driver.js";
 import {
 	credentialStatus,
 	defaultCredentialPath,
@@ -122,23 +123,15 @@ async function runPi(prompt: string): Promise<void> {
 		activityTimer = setInterval(drawActivity, 120);
 		activityTimer.unref();
 	}
-	const piArgs = [
-		"--session-dir",
+	const piArgs = buildPiArgs({
 		sessionDir,
-		"--continue",
-	];
-	if (config.provider) piArgs.push("--provider", config.provider);
-	if (config.model) piArgs.push("--model", config.model);
-	piArgs.push(
-		"--extension",
 		extension,
-		"--append-system-prompt",
-		ISH_SYSTEM_PROMPT,
-		"--tools",
-		process.env.ISH_PI_TOOLS ?? "read,grep,find,ls,system_inspect",
-		"-p",
-		effectivePrompt,
-	);
+		systemPrompt: ISH_SYSTEM_PROMPT,
+		provider: config.provider,
+		model: config.model,
+		continueSession: true,
+	});
+	piArgs.push("-p", effectivePrompt);
 	const child = spawn(binary, piArgs, {
 		cwd: process.cwd(),
 		env: await piEnvironment(config),
@@ -348,8 +341,8 @@ async function run(command = "help", rawArgs: string[]): Promise<void> {
 			try {
 				const pi = resolvePiBinary();
 				const version = spawnSync(pi, ["--version"], { encoding: "utf8", env: process.env });
-				const state = version.status !== 0 ? "fail" : /0\.83\.0/.test(version.stdout) ? "ok" : "warn";
-				check(state, "pi", version.status === 0 ? `${pi} (${version.stdout.trim()}; tested 0.83.0)` : `${pi} did not start`);
+				const state = version.status !== 0 ? "fail" : version.stdout.includes(TESTED_PI_VERSION) ? "ok" : "warn";
+				check(state, "pi", version.status === 0 ? `${pi} (${version.stdout.trim()}; tested ${TESTED_PI_VERSION})` : `${pi} did not start`);
 			} catch (error) {
 				check("fail", "pi", error instanceof Error ? error.message : String(error));
 			}
