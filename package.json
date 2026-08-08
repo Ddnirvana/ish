@@ -20,11 +20,15 @@
     "test:soak": "npm run build && node scripts/soak.mjs --iterations 200",
     "demo": "npm run build && node scripts/evaluate.mjs --iterations 5",
     "demo:jobs": "npm run build && bash scripts/demo.sh",
+    "demo:gif": "npm run build && vhs demo/ish.tape",
+    "demo:all": "npm run build && vhs demo/ish.tape && vhs demo/diagnostics.tape && vhs demo/capabilities.tape",
     "postinstall": "bash scripts/harden-dependencies.sh",
     "check": "npm run build && npm test"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.84.1",
+    "pi-mcp-adapter": "2.21.0",
+    "pi-web-access": "0.18.0",
     "typebox": "1.3.7"
   },
   "devDependencies": {

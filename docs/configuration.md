@@ -65,6 +65,7 @@ tools do not pass through ish's native command editor.
 | --- | --- | --- |
 | Provider and model | `~/.config/ish/config.json` | `ISH_CONFIG` |
 | API keys | `~/.config/ish/credentials.json` | `ISH_CREDENTIALS` |
+| Optional web and MCP capabilities | `~/.config/ish/capabilities.json` | `ISH_CAPABILITIES` |
 | Jobs, context, sessions | `~/.local/state/ish/` | `XDG_STATE_HOME` |
 | intentd socket | `$XDG_RUNTIME_DIR/ish/intentd.sock` or `/tmp/ish-intentd-UID.sock` | `INTENTD_SOCKET` |
 | zsh executable | `zsh` from `PATH` | `ISH_ZSH` |

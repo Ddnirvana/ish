@@ -27,7 +27,7 @@ Type "clear"
 Enter
 Sleep 500ms
 Show
-Type "printf 'native path  →  '; command -v ls"
+Type "printf 'native path  ->  '; command -v ls"
 Enter
 Sleep 1s
 
@@ -48,6 +48,6 @@ Sleep 2s
 Type "n"
 Sleep 2s
 
-Type "printf 'still here  →  '; test -d /tmp/ish-demo-cache && echo protected"
+Type "printf 'still here  ->  '; test -d /tmp/ish-demo-cache && echo protected"
 Enter
 Sleep 3s

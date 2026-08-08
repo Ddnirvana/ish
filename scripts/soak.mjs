@@ -29,14 +29,15 @@ let daemon = new IntentDaemon(options);
 let durableJobs = 0;
 let restarts = 0;
 
-async function waitFor(client, id) {
+async function waitFor(client, id, iteration) {
 	const deadline = Date.now() + 5000;
+	let last;
 	while (Date.now() < deadline) {
-		const record = await client.get(id);
-		if (["succeeded", "failed"].includes(record.status)) return record;
+		last = await client.get(id);
+		if (["succeeded", "failed"].includes(last.status)) return last;
 		await new Promise((resolve) => setTimeout(resolve, 10));
 	}
-	throw new Error(`intent ${id} did not finish`);
+	throw new Error(`intent ${id} at iteration ${iteration} did not finish (last status: ${last?.status ?? "unknown"}, pid: ${last?.pid ?? "none"})`);
 }
 
 try {
@@ -69,7 +70,7 @@ try {
 				cwd: root,
 				requester: "daily-soak",
 			});
-			const completed = await waitFor(client, submitted.id);
+			const completed = await waitFor(client, submitted.id, index);
 			assert.equal(completed.status, "succeeded");
 			durableJobs += 1;
 		}

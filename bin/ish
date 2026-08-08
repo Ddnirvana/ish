@@ -16,7 +16,7 @@ node_command=${ISH_NODE:-$root/runtime/node}
 [ -x "$node_command" ] || node_command=node
 
 case "${1:-}" in
-  config|doctor)
+  config|capability|mcp|doctor)
     command=$1
     shift
     PATH=$(dirname "$node_command"):$PATH
@@ -47,7 +47,7 @@ case "${1:-}" in
     ;;
   help|-h|--help)
     printf '%s\n' "ish - the intent shell"
-    printf '%s\n' "usage: ish [zsh arguments] | config | doctor | service | default-shell"
+    printf '%s\n' "usage: ish [zsh arguments] | config | capability | mcp | doctor | service | default-shell"
     exit 0
     ;;
 esac

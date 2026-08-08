@@ -2,7 +2,7 @@ export const TESTED_PI_VERSION = "0.84.1";
 
 export interface PiLaunchOptions {
 	sessionDir: string;
-	extension: string;
+	extensions: string[];
 	systemPrompt: string;
 	provider?: string;
 	model?: string;
@@ -16,9 +16,8 @@ export function buildPiArgs(options: PiLaunchOptions): string[] {
 	if (options.model) args.push("--model", options.model);
 	args.push("--session-dir", options.sessionDir);
 	if (options.continueSession) args.push("--continue");
+	for (const extension of options.extensions) args.push("--extension", extension);
 	args.push(
-		"--extension",
-		options.extension,
 		"--append-system-prompt",
 		options.systemPrompt,
 		"--no-builtin-tools",

@@ -17,6 +17,17 @@ import { cwdToken, type ActionRecord, type ActionTargetState, type EffectClass }
 import { defaultConfigPath, readConfig, updateConfig, type IshConfigKey } from "./config.js";
 import { buildPiArgs, TESTED_PI_VERSION } from "./pi-driver.js";
 import {
+	configureWeb,
+	defaultCapabilityConfigPath,
+	MCP_PACKAGE,
+	readCapabilityConfig,
+	removeMcpServer,
+	upsertMcpServer,
+	WEB_PACKAGE,
+	type McpApproval,
+	type McpAuthority,
+} from "./capabilities.js";
+import {
 	credentialStatus,
 	defaultCredentialPath,
 	piEnvironment,
@@ -94,7 +105,13 @@ async function runPi(prompt: string): Promise<void> {
 	const binary = resolvePiBinary();
 	const config = await readConfig();
 	const sessionDir = process.env.ISH_PI_SESSION_DIR ?? path.join(defaultStateDir(), "pi-sessions");
-	const extension = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "pi-extension.js");
+	const extensionRoot = path.dirname(fileURLToPath(import.meta.url));
+	const capabilities = await readCapabilityConfig();
+	const extensions = [
+		path.resolve(extensionRoot, "pi-extension.js"),
+		path.resolve(extensionRoot, "mcp-capability-extension.js"),
+	];
+	if (capabilities.web?.enabled) extensions.push(path.resolve(extensionRoot, "web-capability-extension.js"));
 	const nativeEvents = await readNativeTranscriptsWhenReady();
 	const expectedNativeId = process.env.ISH_TRANSCRIPT_EXPECT_ID;
 	const captureStatus = expectedNativeId && !nativeEvents.some((event) => event.id === expectedNativeId)
@@ -125,7 +142,7 @@ async function runPi(prompt: string): Promise<void> {
 	}
 	const piArgs = buildPiArgs({
 		sessionDir,
-		extension,
+		extensions,
 		systemPrompt: ISH_SYSTEM_PROMPT,
 		provider: config.provider,
 		model: config.model,
@@ -273,6 +290,75 @@ async function run(command = "help", rawArgs: string[]): Promise<void> {
 	const args = withoutSeparator(rawArgs);
 	const client = new IntentClient(process.env.INTENTD_SOCKET ?? defaultSocketPath());
 	switch (command) {
+		case "capability": {
+			const subcommand = args[0] ?? "list";
+			if (subcommand === "list") {
+				const config = await readCapabilityConfig();
+				const summary = {
+					path: defaultCapabilityConfigPath(),
+					web: { package: `${WEB_PACKAGE.name}@${WEB_PACKAGE.version}`, enabled: config.web?.enabled ?? false, provider: config.web?.provider },
+					mcp: { package: `${MCP_PACKAGE.name}@${MCP_PACKAGE.version}`, servers: Object.keys(config.mcp.servers).sort() },
+				};
+				if (args.includes("--json")) console.log(JSON.stringify(summary, null, 2));
+				else {
+					console.log("◆ ish capabilities");
+					console.log(`  web  ${summary.web.enabled ? "enabled" : "disabled"}${summary.web.provider ? ` (${summary.web.provider})` : ""}  ${summary.web.package}`);
+					console.log(`  mcp  ${summary.mcp.servers.length} server${summary.mcp.servers.length === 1 ? "" : "s"}  ${summary.mcp.package}`);
+					for (const name of summary.mcp.servers) console.log(`       - ${name}`);
+					console.log(`  config ${summary.path}`);
+				}
+				return;
+			}
+			if (subcommand === "enable" && args[1] === "web") {
+				const provider = requiredOption(args, "--provider");
+				await configureWeb(provider, true);
+				console.log(`enabled read-only web knowledge with ${provider}; restart ish agent sessions to apply`);
+				return;
+			}
+			if (subcommand === "disable" && args[1] === "web") {
+				const current = await readCapabilityConfig();
+				if (!current.web) throw new Error("web capability has not been configured");
+				await configureWeb(current.web.provider, false);
+				console.log("disabled web knowledge; restart ish agent sessions to apply");
+				return;
+			}
+			throw new Error("usage: ish capability list | enable web --provider <provider> | disable web");
+		}
+		case "mcp": {
+			const subcommand = args[0] ?? "list";
+			if (subcommand === "list") {
+				console.log(JSON.stringify((await readCapabilityConfig()).mcp.servers, null, 2));
+				return;
+			}
+			if (subcommand === "remove") {
+				if (!args[1]) throw new Error("usage: ish mcp remove <name>");
+				if (!await removeMcpServer(args[1])) throw new Error(`MCP server not found: ${args[1]}`);
+				console.log(`removed MCP server ${args[1]}; restart ish agent sessions to apply`);
+				return;
+			}
+			if (subcommand === "add") {
+				const name = args[1];
+				if (!name) throw new Error("usage: ish mcp add <name> --command <command> --version <exact> --tools <a,b> --authority observation|effectful --approval none|always -- [args]");
+				const separator = args.indexOf("--");
+				const options = separator === -1 ? args : args.slice(0, separator);
+				const commandName = requiredOption(options, "--command");
+				const version = requiredOption(options, "--version");
+				const tools = requiredOption(options, "--tools").split(",").map((value) => value.trim()).filter(Boolean);
+				const authority = requiredOption(options, "--authority") as McpAuthority;
+				const approval = requiredOption(options, "--approval") as McpApproval;
+				await upsertMcpServer(name, {
+					command: commandName,
+					version,
+					tools,
+					authority,
+					approval,
+					args: separator === -1 ? [] : args.slice(separator + 1),
+				});
+				console.log(`recorded MCP server ${name}; no process was started; restart ish agent sessions to apply`);
+				return;
+			}
+			throw new Error("usage: ish mcp list | add ... | remove <name>");
+		}
 		case "config": {
 			const subcommand = args[0] ?? "show";
 			if (subcommand === "show") {
@@ -603,7 +689,7 @@ async function run(command = "help", rawArgs: string[]): Promise<void> {
 			console.log(JSON.stringify(await client.retry(args[0]), null, 2));
 			return;
 		default:
-			console.log("ishctl commands: config, doctor, risk, route, ask, panes, broadcast, context, capsules, action, action-dispatch, actions, action-show, ping, submit, list, show, logs, cancel, retry");
+			console.log("ishctl commands: config, capability, mcp, doctor, risk, route, ask, panes, broadcast, context, capsules, action, action-dispatch, actions, action-show, ping, submit, list, show, logs, cancel, retry");
 	}
 }
 

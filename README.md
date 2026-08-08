@@ -120,6 +120,19 @@ Tools supplied by installed Pi extensions remain discoverable without crowding
 the default prompt; Pi can activate the relevant extension tool when a request
 needs it. Pi's built-in `bash`, `edit`, and `write` tools remain inactive unless
 the user explicitly includes them in `ISH_PI_TOOLS`.
+
+Optional external knowledge is explicit and removable:
+
+```bash
+ish capability enable web --provider brave
+ish capability list
+ish mcp list
+```
+
+The bundled web adapter exposes only bounded search, source checking, and
+HTTP(S) fetching. MCP begins with zero servers and requires exact command,
+version, tool allowlist, authority, and approval declarations. See
+[External capabilities](docs/external-capabilities.md).
 Commands recognized as destructive pause in the shell editor:
 
 ```text
@@ -160,8 +173,11 @@ installed without sudo and start at login.
 - [Getting started](docs/getting-started.md)
 - [Configuration](docs/configuration.md)
 - [Commands](docs/commands.md)
+- [External capabilities](docs/external-capabilities.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Security](SECURITY.md)
+
+More demos are maintained in [demo](demo/README.md).
 
 ## Acknowledgments
 

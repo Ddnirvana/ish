@@ -7,6 +7,7 @@ import { IntentDaemon } from "./daemon.js";
 import { defaultSocketPath, defaultStateDir } from "./paths.js";
 import { buildPiArgs } from "./pi-driver.js";
 import { ISH_SYSTEM_PROMPT } from "./ui.js";
+import { readCapabilityConfig } from "./capabilities.js";
 
 interface CliOptions {
 	socketPath: string;
@@ -61,7 +62,7 @@ function parseArgs(args: string[]): CliOptions {
 }
 
 const options = parseArgs(process.argv.slice(2));
-const extension = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "pi-extension.js");
+const extensionRoot = path.dirname(fileURLToPath(import.meta.url));
 const daemon = new IntentDaemon({
 	socketPath: options.socketPath,
 	stateDir: options.stateDir,
@@ -69,9 +70,15 @@ const daemon = new IntentDaemon({
 		command: options.runner,
 		args: async () => {
 			const config = await readConfig();
+			const capabilities = await readCapabilityConfig();
+			const extensions = [
+				path.resolve(extensionRoot, "pi-extension.js"),
+				path.resolve(extensionRoot, "mcp-capability-extension.js"),
+			];
+			if (capabilities.web?.enabled) extensions.push(path.resolve(extensionRoot, "web-capability-extension.js"));
 			return buildPiArgs({
 				sessionDir: process.env.ISH_PI_SESSION_DIR ?? path.join(defaultStateDir(), "pi-sessions"),
-				extension,
+				extensions,
 				systemPrompt: ISH_SYSTEM_PROMPT,
 				provider: config.provider,
 				model: config.model,
