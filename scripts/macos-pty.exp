@@ -12,22 +12,29 @@ set timeout -1
 log_file -noappend $output
 spawn -noecho $command
 
-proc sync_winsize {} {
+proc sync_winsize {keep_raw} {
   global spawn_out
   if {![info exists spawn_out(slave,name)]} {
     return
   }
-  if {[catch {set rows [stty rows]}] || [catch {set columns [stty columns]}]} {
+  if {[catch {set size [exec stty -f /dev/tty size]}] ||
+      [scan [string trim $size] "%d %d" rows columns] != 2} {
     return
   }
-  catch {stty rows $rows columns $columns < $spawn_out(slave,name)}
+  catch {exec stty -f $spawn_out(slave,name) rows $rows columns $columns}
+  if {$keep_raw} {
+    # A signal trap can run while interact owns the terminal. Reassert its
+    # byte-at-a-time mode so keystrokes never fall back to cooked echo.
+    catch {stty raw -echo}
+  }
 }
 
-sync_winsize
-trap {sync_winsize} WINCH
+trap {sync_winsize 1} WINCH
+sync_winsize 0
 set slave_channel [open $slave_file w]
 puts -nonewline $slave_channel $spawn_out(slave,name)
 close $slave_channel
+
 interact
 
 set result [wait]

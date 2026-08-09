@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { closeSync, openSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -50,6 +51,57 @@ async function waitForVimGeometry(
 	assert.equal(value, expected);
 }
 
+async function waitForFileValue(file: string, expected: string): Promise<void> {
+	const deadline = Date.now() + 3000;
+	let value = "";
+	while (Date.now() < deadline) {
+		try {
+			value = (await readFile(file, "utf8")).trim();
+		} catch {
+			// The producer has not written the observation yet.
+		}
+		if (value === expected) return;
+		await sleep(25);
+	}
+	assert.equal(value, expected);
+}
+
+async function waitForShellGeometry(
+	tmux: (args: string[]) => { stdout: string },
+	file: string,
+	expected: string,
+): Promise<void> {
+	const deadline = Date.now() + 3000;
+	let value = "";
+	while (Date.now() < deadline) {
+		tmux([
+			"send-keys", "-t", "integrity:0.0",
+			`print -r -- "$(stty size):$LINES:$COLUMNS" > ${file}`,
+			"Enter",
+		]);
+		await sleep(50);
+		try {
+			value = (await readFile(file, "utf8")).trim();
+		} catch {
+			// The shell has not completed the probe yet.
+		}
+		if (value === expected) return;
+	}
+	assert.equal(value, expected);
+}
+
+function assertRawTerminal(tty: string): void {
+	const fd = openSync(tty, "r+");
+	try {
+		const result = spawnSync("stty", ["-a"], { encoding: "utf8", stdio: [fd, "pipe", "pipe"] });
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stdout, /(?:^|\s)-icanon(?:\s|$)/);
+		assert.match(result.stdout, /(?:^|\s)-echo(?:\s|$)/);
+	} finally {
+		closeSync(fd);
+	}
+}
+
 async function stopSession(
 	tmux: (args: string[]) => { stdout: string; status: number | null },
 	target: string,
@@ -72,10 +124,13 @@ test("macOS PTY tracks resizes and preserves repeated Vim screens", { skip: !has
 	const home = path.join(root, "home");
 	const fixture = path.join(root, "fixture.txt");
 	const geometry = path.join(root, "geometry.txt");
+	const shellGeometry = path.join(root, "shell-geometry.txt");
+	const movement = path.join(root, "movement.txt");
+	const original = "ISH_VIM_SCREEN_SENTINEL\nsecond line\n";
 	const socket = `ish-terminal-${process.pid}-${Date.now()}`;
 	const tmux = (args: string[]) => spawnSync("tmux", ["-L", socket, ...args], { encoding: "utf8" });
 	await mkdir(home);
-	await writeFile(fixture, "ISH_VIM_SCREEN_SENTINEL\nsecond line\n");
+	await writeFile(fixture, original);
 	t.after(async () => {
 		await stopSession(tmux, "integrity:0.0");
 		await rm(root, { recursive: true, force: true });
@@ -90,16 +145,16 @@ test("macOS PTY tracks resizes and preserves repeated Vim screens", { skip: !has
 	await sleep(200);
 
 	tmux(["resize-window", "-t", "integrity:0", "-x", "121", "-y", "37"]);
-	tmux(["send-keys", "-t", "integrity:0.0", "stty size; print -r -- ISH_SIZE:$LINES:$COLUMNS", "Enter"]);
-	await sleep(150);
-	result = tmux(["capture-pane", "-p", "-t", "integrity:0.0", "-S", "-20"]);
-	assert.match(result.stdout, /37 121/);
-	assert.match(result.stdout, /ISH_SIZE:37:121/);
+	await waitForShellGeometry(tmux, shellGeometry, "37 121:37:121");
 
 	for (let iteration = 0; iteration < 12; iteration += 1) {
 		const columns = iteration % 2 === 0 ? 100 : 121;
 		const lines = iteration % 2 === 0 ? 30 : 37;
-		tmux(["send-keys", "-t", "integrity:0.0", `vim -Nu NONE -n ${fixture}`, "Enter"]);
+		tmux([
+			"send-keys", "-t", "integrity:0.0",
+			`vim -Nu NONE -n -c "autocmd CursorMoved * call writefile([string(line('.'))], '${movement}')" ${fixture}`,
+			"Enter",
+		]);
 		await waitForPane(tmux, /ISH_VIM_SCREEN_SENTINEL/);
 		tmux(["resize-window", "-t", "integrity:0", "-x", String(columns), "-y", String(lines)]);
 		assert.equal(
@@ -107,12 +162,24 @@ test("macOS PTY tracks resizes and preserves repeated Vim screens", { skip: !has
 			`${columns}:${lines}`,
 		);
 		await sleep(100);
+		const paneTty = tmux(["display-message", "-p", "-t", "integrity:0.0", "#{pane_tty}"]).stdout.trim();
+		const transcriptBase = path.join(root, "runtime", "transcripts");
+		const [transcriptDir] = await readdir(transcriptBase);
+		const childTty = (await readFile(path.join(transcriptBase, transcriptDir, "macos-pty-slave"), "utf8")).trim();
+		assertRawTerminal(paneTty);
+		assertRawTerminal(childTty);
+		await rm(movement, { force: true });
+		tmux(["send-keys", "-t", "integrity:0.0", "j"]);
+		await waitForFileValue(movement, "2");
+		tmux(["send-keys", "-t", "integrity:0.0", "k"]);
+		await waitForFileValue(movement, "1");
 		await rm(geometry, { force: true });
 		await waitForVimGeometry(tmux, geometry, `${lines}:${columns}`);
 		const pane = tmux(["capture-pane", "-p", "-t", "integrity:0.0"]).stdout;
 		assert.match(pane, /ISH_VIM_SCREEN_SENTINEL/);
 		tmux(["send-keys", "-t", "integrity:0.0", ":qa!", "Enter"]);
 		await waitForPane(tmux, /ish .* > /);
+		assert.equal(await readFile(fixture, "utf8"), original);
 	}
 
 	tmux(["send-keys", "-t", "integrity:0.0", "stty sane; print -r -- ISH_VIM_RETURNED", "Enter"]);
