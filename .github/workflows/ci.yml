@@ -50,6 +50,16 @@ jobs:
       - name: Install pinned dependencies
         run: npm ci
 
+      - name: Print runner environment
+        run: |
+          uname -a
+          node --version
+          command -v zsh tmux vim script || true
+          zsh --version || true
+          tmux -V || true
+          nproc
+          ulimit -a
+
       - name: Build
         run: npm run build
 
@@ -64,11 +74,18 @@ jobs:
         shell: bash
         run: |
           log="$RUNNER_TEMP/test-output.log"
-          if [ -f "$log" ] && rg -n -A 6 '^not ok' "$log" > /tmp/fail-blocks.txt 2>/dev/null; then
-            tail -n 80 /tmp/fail-blocks.txt
-          elif [ -f "$log" ]; then
-            tail -n 40 "$log"
-          fi | sed 's/^/::error::/'
+          if [ -f "$log" ]; then
+            {
+              echo "## Test output tail"
+              echo '```'
+              tail -n 120 "$log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            msg=$(tail -n 120 "$log" | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+            echo "::error file=test-output.log,title=test failure tail::$msg"
+          else
+            echo "## No test log was produced" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Scan for credential-like patterns
         shell: bash
@@ -116,6 +133,16 @@ jobs:
       - name: Install pinned dependencies
         run: npm ci
 
+      - name: Print runner environment
+        run: |
+          uname -a
+          node --version
+          command -v zsh tmux vim script || true
+          zsh --version || true
+          tmux -V || true
+          nproc
+          ulimit -a
+
       - name: Build
         run: npm run build
 
@@ -130,11 +157,18 @@ jobs:
         shell: bash
         run: |
           log="$RUNNER_TEMP/soak-output.log"
-          if [ -f "$log" ] && rg -n -A 6 'Error|error:|assert|failed' "$log" > /tmp/soak-fail.txt 2>/dev/null; then
-            tail -n 60 /tmp/soak-fail.txt
-          elif [ -f "$log" ]; then
-            tail -n 40 "$log"
-          fi | sed 's/^/::error::/'
+          if [ -f "$log" ]; then
+            {
+              echo "## Soak output tail"
+              echo '```'
+              tail -n 120 "$log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            msg=$(tail -n 120 "$log" | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+            echo "::error file=soak-output.log,title=soak failure tail::$msg"
+          else
+            echo "## No soak log was produced" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload soak log on failure
         if: failure()
