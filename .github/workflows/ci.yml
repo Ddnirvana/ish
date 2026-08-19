@@ -57,7 +57,7 @@ jobs:
           command -v zsh tmux vim script || true
           zsh --version || true
           tmux -V || true
-          nproc
+          sysctl -n hw.ncpu 2>/dev/null || nproc
           ulimit -a
 
       - name: Build
@@ -133,6 +133,10 @@ jobs:
       - name: Install pinned dependencies
         run: npm ci
 
+      - name: Install zsh on Linux if missing
+        run: |
+          if ! command -v zsh >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y zsh; fi
+
       - name: Print runner environment
         run: |
           uname -a
@@ -140,7 +144,7 @@ jobs:
           command -v zsh tmux vim script || true
           zsh --version || true
           tmux -V || true
-          nproc
+          sysctl -n hw.ncpu 2>/dev/null || nproc
           ulimit -a
 
       - name: Build

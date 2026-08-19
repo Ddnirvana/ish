@@ -26,6 +26,22 @@ async function waitForDirectory(target: string, deadlineMs = 10_000): Promise<vo
 	assert.fail(`directory never gained an entry within ${deadlineMs}ms: ${target}`);
 }
 
+async function waitForPaneMatch(
+	tmux: (args: string[]) => { stdout: string },
+	target: string,
+	pattern: RegExp,
+	deadlineMs = 10_000,
+): Promise<void> {
+	const deadline = Date.now() + deadlineMs;
+	let pane = "";
+	while (Date.now() < deadline) {
+		pane = tmux(["capture-pane", "-p", "-t", target, "-S", "-20"]).stdout;
+		if (pattern.test(pane)) return;
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+	assert.match(pane, pattern);
+}
+
 test("native visible output and status reach the next agent request", { skip: !hasTools }, async (t) => {
 	const root = await mkdtemp(path.join(os.tmpdir(), "ish-transcript-real-"));
 	const log = path.join(root, "agent-prompt.log");
@@ -45,6 +61,7 @@ test("native visible output and status reach the next agent request", { skip: !h
 	assert.equal(result.status, 0, result.stderr);
 	const transcriptBase = path.join(root, "runtime", "transcripts");
 	await waitForDirectory(transcriptBase);
+	await waitForPaneMatch(tmux, "native:0.0", /ish /);
 	const transcriptDirs = await readdir(transcriptBase);
 	assert.equal(transcriptDirs.length, 1);
 	const transcriptDir = path.join(transcriptBase, transcriptDirs[0]);
