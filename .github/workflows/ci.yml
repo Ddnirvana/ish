@@ -27,10 +27,10 @@ jobs:
           - ubuntu-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js 22.19
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22.19.0
           cache: npm
@@ -43,6 +43,7 @@ jobs:
       - name: Install tmux and vim on Linux if missing
         if: runner.os == 'Linux'
         run: |
+          if ! command -v zsh >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y zsh; fi
           if ! command -v tmux >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y tmux; fi
           if ! command -v vim >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y vim; fi
 
@@ -57,6 +58,17 @@ jobs:
         run: |
           set -o pipefail
           npm run test:serial 2>&1 | tee "$RUNNER_TEMP/test-output.log"
+
+      - name: Diagnose test failures
+        if: failure()
+        shell: bash
+        run: |
+          log="$RUNNER_TEMP/test-output.log"
+          if [ -f "$log" ] && rg -n -A 6 '^not ok' "$log" > /tmp/fail-blocks.txt 2>/dev/null; then
+            tail -n 80 /tmp/fail-blocks.txt
+          elif [ -f "$log" ]; then
+            tail -n 40 "$log"
+          fi | sed 's/^/::error::/'
 
       - name: Scan for credential-like patterns
         shell: bash
@@ -81,7 +93,7 @@ jobs:
 
       - name: Upload test log on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: test-output-${{ matrix.os }}
           path: ${{ runner.temp }}/test-output.log
@@ -93,10 +105,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js 22.19
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22.19.0
           cache: npm
@@ -113,9 +125,20 @@ jobs:
           set -o pipefail
           npm run test:soak 2>&1 | tee "$RUNNER_TEMP/soak-output.log"
 
+      - name: Diagnose soak failures
+        if: failure()
+        shell: bash
+        run: |
+          log="$RUNNER_TEMP/soak-output.log"
+          if [ -f "$log" ] && rg -n -A 6 'Error|error:|assert|failed' "$log" > /tmp/soak-fail.txt 2>/dev/null; then
+            tail -n 60 /tmp/soak-fail.txt
+          elif [ -f "$log" ]; then
+            tail -n 40 "$log"
+          fi | sed 's/^/::error::/'
+
       - name: Upload soak log on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: soak-output
           path: ${{ runner.temp }}/soak-output.log
