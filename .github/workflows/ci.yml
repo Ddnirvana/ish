@@ -44,6 +44,16 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           if ! command -v zsh >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y zsh; fi
+          # Ubuntu's global zshrc runs compinit, which prompts about insecure
+          # directories when zsh is freshly installed by apt. Make every
+          # directory compinit flags as insecure non-writable to the group and
+          # owned by the runner so interactive ish tests never hang on the
+          # compinit confirmation prompt.
+          sudo chmod -R go-w /usr/share/zsh /usr/local/share/zsh 2>/dev/null || true
+          zsh -fc 'autoload -Uz compaudit; compaudit' 2>/dev/null | while read -r dir; do
+            sudo chmod go-w "$dir" 2>/dev/null || true
+            sudo chown "$(id -u):$(id -g)" "$dir" 2>/dev/null || true
+          done
           if ! command -v tmux >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y tmux; fi
           if ! command -v vim >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y vim; fi
 
@@ -81,8 +91,8 @@ jobs:
               tail -n 120 "$log"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            msg=$(tail -n 120 "$log" | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
-            echo "::error file=test-output.log,title=test failure tail::$msg"
+            msg=$(tail -n 120 "$log" | perl -0777 -pe 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g')
+            echo "::error title=test failure tail::$msg"
           else
             echo "## No test log was produced" >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -168,8 +178,8 @@ jobs:
               tail -n 120 "$log"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            msg=$(tail -n 120 "$log" | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
-            echo "::error file=soak-output.log,title=soak failure tail::$msg"
+            msg=$(tail -n 120 "$log" | perl -0777 -pe 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g')
+            echo "::error title=soak failure tail::$msg"
           else
             echo "## No soak log was produced" >> "$GITHUB_STEP_SUMMARY"
           fi
