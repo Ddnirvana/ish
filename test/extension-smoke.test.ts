@@ -50,6 +50,8 @@ test("Pi adapter registers durable, inspection, and staged capability tools", as
 		"service_observe",
 		"network_observe",
 		"git_inspect",
+		"shell_propose",
+		"shell_apply",
 		"list_capabilities",
 		"activate_capabilities",
 	]);
@@ -58,7 +60,8 @@ test("Pi adapter registers durable, inspection, and staged capability tools", as
 	await handlers.get("session_start")?.();
 	assert.deepEqual(active, [
 		"read", "grep", "find", "ls", "intent_job", "system_inspect", "shell_observe", "process_observe",
-		"log_query", "service_observe", "network_observe", "git_inspect", "list_capabilities", "activate_capabilities",
+		"log_query", "service_observe", "network_observe", "git_inspect", "shell_propose", "shell_apply",
+		"list_capabilities", "activate_capabilities",
 	]);
 
 	const list = tools.find((tool) => tool.name === "list_capabilities");
@@ -77,7 +80,8 @@ test("Pi adapter registers durable, inspection, and staged capability tools", as
 	const result = await activate.execute("call", { names: ["package_tool", "bash", "missing"] });
 	assert.deepEqual(active, [
 		"read", "grep", "find", "ls", "intent_job", "system_inspect", "shell_observe", "process_observe",
-		"log_query", "service_observe", "network_observe", "git_inspect", "list_capabilities", "activate_capabilities",
+		"log_query", "service_observe", "network_observe", "git_inspect", "shell_propose", "shell_apply",
+		"list_capabilities", "activate_capabilities",
 		"package_tool",
 	]);
 	assert.deepEqual((result as { details: unknown }).details, {

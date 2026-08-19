@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { constants } from "node:fs";
-import { mkdtemp, open, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, open, rm, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -154,4 +154,109 @@ test("capsule action protocol exposes stale, busy, unsafe, and uncertain outcome
 	await rm(fifo);
 	const unreachable = await restarted.createAction({ selector: `capsule:${id}`, command: "pwd", effectClass: "observation" });
 	assert.equal((await restarted.dispatchAction(unreachable.id)).targets[0]?.state, "unreached");
+});
+
+test("controlled effects preserve exact commands and durable approval decisions", async (t) => {
+	const root = await mkdtemp(path.join(os.tmpdir(), "ish-controlled-effect-"));
+	const fifo = path.join(root, "capsule.fifo");
+	assert.equal(spawnSync("mkfifo", [fifo]).status, 0);
+	const reader = await open(fifo, constants.O_RDWR | constants.O_NONBLOCK);
+	t.after(async () => {
+		await reader.close();
+		await rm(root, { recursive: true, force: true });
+	});
+
+	const stateDir = path.join(root, "state");
+	const store = new CapsuleActionStore(stateDir);
+	await store.initialize();
+	const id = newCapsuleId();
+	await store.register({
+		id,
+		host: "server-a",
+		bootId: "boot-a",
+		shell: "zsh",
+		pid: process.pid,
+		processStart: "start-a",
+		endpoint: fifo,
+		generation: 4,
+		cwd: root,
+		authority: "uid:test",
+		session: "prod",
+		pane: "%1",
+	});
+
+	const command = "env MODE='a b' sudo bash -c 'printf \"%s\\n\" \"$MODE;$(id)\"'";
+	const proposal = await store.createAction({
+		selector: `capsule:${id}`,
+		command,
+		effectClass: "effectful",
+		reason: "exercise adversarial quoting without reinterpretation",
+		resources: ["service:test", path.join(root, "result file")],
+		provenance: "pi:123",
+		requireApproval: true,
+	});
+	assert.equal(proposal.command, command);
+	assert.equal(proposal.approval, "pending");
+	assert.equal(proposal.risk.rule, "privileged-operation");
+	assert.deepEqual(proposal.resources, ["service:test", path.join(root, "result file")]);
+	await assert.rejects(() => store.dispatchAction(proposal.id), /requires interactive ish approval/);
+
+	const approved = await store.approveAction({
+		actionId: proposal.id,
+		capsuleId: id,
+		generation: 4,
+		cwdToken: cwdToken(root),
+	});
+	assert.equal(approved.approval, "approved");
+	assert.equal(approved.targets[0]?.state, "dispatched");
+	const wire = Buffer.alloc(4096);
+	const read = await reader.read(wire, 0, wire.length, null);
+	const fields = wire.subarray(0, read.bytesRead).toString().trimEnd().split("\t");
+	assert.equal(Buffer.from(fields[7]!, "base64url").toString("utf8"), command);
+	await store.admit({
+		actionId: proposal.id,
+		capsuleId: id,
+		generation: 4,
+		cwdToken: cwdToken(root),
+		lineEditorReady: true,
+	});
+	await store.report({ actionId: proposal.id, capsuleId: id, state: "succeeded", exitCode: 0 });
+
+	const cancelled = await store.createAction({
+		selector: `capsule:${id}`,
+		command: "touch should-not-exist",
+		effectClass: "effectful",
+		requireApproval: true,
+	});
+	const cancellation = await store.cancelAction(cancelled.id, "cancelled by test user");
+	assert.equal(cancellation.approval, "cancelled");
+	assert.equal(cancellation.status, "cancelled");
+	assert.equal(cancellation.targets[0]?.state, "cancelled");
+	assert.equal(cancellation.approvalWitness, "cancelled by test user");
+
+	const pending = await store.createAction({
+		selector: `capsule:${id}`,
+		command: "touch pending-only",
+		effectClass: "effectful",
+		requireApproval: true,
+	});
+	const restarted = new CapsuleActionStore(stateDir);
+	await restarted.initialize();
+	assert.equal(restarted.getAction(cancelled.id).approval, "cancelled");
+	assert.equal(restarted.getAction(pending.id).approval, "pending");
+	assert.equal(restarted.getAction(pending.id).status, "planned");
+});
+
+test("cwd witnesses change when a symlink is retargeted", async (t) => {
+	const root = await mkdtemp(path.join(os.tmpdir(), "ish-cwd-symlink-"));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const first = path.join(root, "first");
+	const second = path.join(root, "second");
+	const link = path.join(root, "current");
+	await Promise.all([mkdir(first), mkdir(second)]);
+	await symlink(first, link);
+	const before = cwdToken(link);
+	await rm(link);
+	await symlink(second, link);
+	assert.notEqual(cwdToken(link), before);
 });

@@ -15,7 +15,7 @@ const RULES: RiskRule[] = [
 		level: "critical",
 		rule: "destructive-root",
 		reason: "recursive deletion targets a root, home, or system path",
-		pattern: /(?:^|[;&|]\s*|sudo\s+)(?:command\s+)?rm\s+[^\n]*(?:-[^\s]*[rR][^\s]*|--recursive)[^\n]*(?:\s\/\s*$|\s\/(?:etc|usr|var|home|boot)(?:\/|\s|$)|\s~(?:\/|\s|$)|\$HOME)/i,
+		pattern: /\brm\s+[^\n]*(?:-[^\s]*[rR][^\s]*|--recursive)[^\n]*(?:\s\/\s*(?:['"]|$)|\s\/(?:etc|usr|var|home|boot)(?:\/|\s|['"]|$)|\s~(?:\/|\s|['"]|$)|\$HOME)/i,
 	},
 	{
 		level: "critical",
@@ -33,13 +33,13 @@ const RULES: RiskRule[] = [
 		level: "danger",
 		rule: "recursive-delete",
 		reason: "recursive deletion can remove an entire directory tree",
-		pattern: /(?:^|[;&|]\s*|sudo\s+)(?:command\s+)?rm\s+[^\n]*(?:-[^\s]*[rR][^\s]*|--recursive)\b/i,
+		pattern: /\brm\s+[^\n]*(?:-[^\s]*[rR][^\s]*|--recursive)\b/i,
 	},
 	{
 		level: "danger",
 		rule: "privileged-operation",
 		reason: "sudo grants the command elevated operating-system authority",
-		pattern: /(?:^|[;&|]\s*)sudo\s+/i,
+		pattern: /\bsudo(?:\s+-[^\s]+)*\s+/i,
 	},
 	{
 		level: "danger",
@@ -75,7 +75,7 @@ const RULES: RiskRule[] = [
 		level: "caution",
 		rule: "single-delete",
 		reason: "removal is irreversible without an external recovery mechanism",
-		pattern: /(?:^|[;&|]\s*|sudo\s+)(?:command\s+)?rm\s+/i,
+		pattern: /\brm\s+/i,
 	},
 ];
 

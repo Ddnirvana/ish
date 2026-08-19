@@ -1,5 +1,5 @@
 import type { ContextQuery, RecordContextEvent } from "./context.js";
-import type { AdmitAction, CreateAction, RegisterCapsule, ReportAction, UpdateCapsule } from "./capsules.js";
+import type { AdmitAction, ApproveAction, CreateAction, RegisterCapsule, ReportAction, UpdateCapsule } from "./capsules.js";
 
 export type IntentStatus =
 	| "queued"
@@ -42,6 +42,8 @@ export type IntentRequest =
 	| { action: "capsule-list"; includeOffline?: boolean }
 	| { action: "action-create"; input: CreateAction }
 	| { action: "action-dispatch"; id: string }
+	| { action: "action-approve"; input: ApproveAction }
+	| { action: "action-cancel"; id: string; witness?: string }
 	| { action: "action-list" }
 	| { action: "action-get"; id: string }
 	| { action: "action-admit"; input: AdmitAction }

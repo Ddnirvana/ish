@@ -61,6 +61,20 @@ function printAction(action: ActionRecord): void {
 	console.log(JSON.stringify(action, null, 2));
 }
 
+function printProposal(action: ActionRecord): void {
+	console.log("◆ ish controlled effect");
+	console.log(`  proposal   ${action.id}`);
+	console.log(`  command    ${JSON.stringify(action.command)}`);
+	console.log(`  reason     ${action.reason || "not provided"}`);
+	console.log(`  resources  ${action.resources.length ? action.resources.map((resource) => JSON.stringify(resource)).join(", ") : "not declared"}`);
+	console.log(`  risk       ${action.risk.level}/${action.risk.rule}: ${action.risk.reason}`);
+	console.log(`  provenance ${action.provenance}`);
+	for (const target of action.targets) {
+		const location = [target.host, target.session, target.window, target.pane].filter(Boolean).join("/");
+		console.log(`  target     ${target.capsuleId} ${location} cwd=${JSON.stringify(target.expectedCwd)} gen=${target.expectedGeneration}`);
+	}
+}
+
 function commandExists(command: string): boolean {
 	if (!command || !/^[A-Za-z0-9_.:+-]+$/.test(command)) return false;
 	const shell = process.env.SHELL ?? "/bin/sh";
@@ -275,13 +289,23 @@ async function runShellControl(raw: string): Promise<void> {
 		const header = rest.slice(0, marker).trim().split(/\s+/);
 		return run("broadcast", [...header, "--", rest.slice(marker + 4)]);
 	}
-	for (const [prefix, effectClass] of [["/observe ", "observation"], ["/apply ", "effectful"]] as const) {
-		if (!line.startsWith(prefix)) continue;
-		const rest = line.slice(prefix.length);
+	if (/^\/apply\s+op_[a-f0-9]{20}$/.test(line)) {
+		throw new Error("proposal approval must run directly from the interactive ish prompt");
+	}
+	if (line.startsWith("/apply ")) {
+		const rest = line.slice("/apply ".length);
 		const marker = rest.indexOf(" -- ");
-		if (marker === -1) throw new Error(`usage: ${prefix.trim()} <selector> [--execute] -- <command>`);
+		if (marker === -1) throw new Error("usage: /apply <selector> -- <command>");
 		const header = rest.slice(0, marker).trim().split(/\s+/);
-		return run("action", [header[0], "--class", effectClass, ...header.slice(1), "--", rest.slice(marker + 4)]);
+		if (header.includes("--execute")) throw new Error("/apply no longer executes directly; create the proposal, then approve its op_ID");
+		return run("action", [header[0], "--class", "effectful", "--approval-required", "--reason", "requested from ish", "--", rest.slice(marker + 4)]);
+	}
+	if (line.startsWith("/observe ")) {
+		const rest = line.slice("/observe ".length);
+		const marker = rest.indexOf(" -- ");
+		if (marker === -1) throw new Error("usage: /observe <selector> [--execute] -- <command>");
+		const header = rest.slice(0, marker).trim().split(/\s+/);
+		return run("action", [header[0], "--class", "observation", ...header.slice(1), "--", rest.slice(marker + 4)]);
 	}
 	throw new Error(`unknown ish control command: ${line}`);
 }
@@ -611,12 +635,40 @@ async function run(command = "help", rawArgs: string[]): Promise<void> {
 				selector: args[0],
 				command: args.slice(separator + 1).join(" "),
 				effectClass,
+				reason: option(args.slice(0, separator), "--reason"),
+				provenance: `ishctl:${process.pid}`,
+				requireApproval: args.slice(0, separator).includes("--approval-required"),
 				ttlMs: ttl === undefined ? undefined : Number(ttl),
 			});
 			if (args.slice(0, separator).includes("--execute")) action = await client.dispatchAction(action.id);
 			printAction(action);
 			return;
 		}
+		case "action-preview": {
+			if (!args[0]) throw new Error("usage: ishctl action-preview <action-id>");
+			const action = await client.getAction(args[0]);
+			if (action.approval !== "pending") throw new Error(`action ${action.id} approval is ${action.approval}`);
+			printProposal(action);
+			return;
+		}
+		case "action-approve": {
+			if (!args[0]) throw new Error("usage: ishctl action-approve <action-id> --capsule ID --generation N --cwd-token TOKEN");
+			if (process.env.ISH_ZLE_APPROVAL !== "1") {
+				await client.cancelAction(args[0], "headless approval denied").catch(() => undefined);
+				throw new Error("headless approval denied; use /apply op_ID in interactive ish");
+			}
+			printAction(await client.approveAction({
+				actionId: args[0],
+				capsuleId: requiredOption(args, "--capsule"),
+				generation: Number(requiredOption(args, "--generation")),
+				cwdToken: requiredOption(args, "--cwd-token"),
+			}));
+			return;
+		}
+		case "action-cancel":
+			if (!args[0]) throw new Error("usage: ishctl action-cancel <action-id> [--witness REASON]");
+			printAction(await client.cancelAction(args[0], option(args, "--witness")));
+			return;
 		case "action-dispatch":
 			if (!args[0]) throw new Error("usage: ishctl action-dispatch <action-id>");
 			printAction(await client.dispatchAction(args[0]));
@@ -689,7 +741,7 @@ async function run(command = "help", rawArgs: string[]): Promise<void> {
 			console.log(JSON.stringify(await client.retry(args[0]), null, 2));
 			return;
 		default:
-			console.log("ishctl commands: config, capability, mcp, doctor, risk, route, ask, panes, broadcast, context, capsules, action, action-dispatch, actions, action-show, ping, submit, list, show, logs, cancel, retry");
+			console.log("ishctl commands: config, capability, mcp, doctor, risk, route, ask, panes, broadcast, context, capsules, action, action-preview, action-dispatch, actions, action-show, ping, submit, list, show, logs, cancel, retry");
 	}
 }
 

@@ -133,6 +133,10 @@ export class IntentDaemon {
 				return this.capsules.createAction(request.input);
 			case "action-dispatch":
 				return this.capsules.dispatchAction(request.id);
+			case "action-approve":
+				return this.capsules.approveAction(request.input);
+			case "action-cancel":
+				return this.capsules.cancelAction(request.id, request.witness);
 			case "action-list":
 				return this.capsules.listActions();
 			case "action-get":

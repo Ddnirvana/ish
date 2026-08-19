@@ -3,6 +3,7 @@ import type { ContextEvent, ContextQuery, RecordContextEvent } from "./context.j
 import type {
 	ActionRecord,
 	AdmitAction,
+	ApproveAction,
 	CapsuleRecord,
 	CreateAction,
 	RegisterCapsule,
@@ -71,6 +72,14 @@ export class IntentClient {
 
 	dispatchAction(id: string): Promise<ActionRecord> {
 		return this.request({ action: "action-dispatch", id });
+	}
+
+	approveAction(input: ApproveAction): Promise<ActionRecord> {
+		return this.request({ action: "action-approve", input });
+	}
+
+	cancelAction(id: string, witness?: string): Promise<ActionRecord> {
+		return this.request({ action: "action-cancel", id, witness });
 	}
 
 	listActions(): Promise<ActionRecord[]> {

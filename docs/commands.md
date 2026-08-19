@@ -30,6 +30,9 @@
 | `/context` | Show context for the current shell scope |
 | `/intent` | List durable intents |
 | `/actions` | List cross-shell actions |
+| `/apply op_ID` | Review and approve or cancel one persisted Pi proposal |
+| `/apply SELECTOR -- COMMAND` | Persist a manual effect proposal without executing it |
+| `/observe SELECTOR [--execute] -- COMMAND` | Preview or run a read-only cross-shell observation |
 | `/panes` | Show tmux topology |
 
 ## ishctl

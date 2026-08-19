@@ -4,6 +4,7 @@ import { registerSystemObserve } from "../extensions/system-observe/index.js";
 import { IntentClient } from "./client.js";
 import { defaultSocketPath } from "./paths.js";
 import type { PiExtensionAPI, PiExtensionContext, PiToolInfo } from "./pi-types.js";
+import { assessRisk } from "./risk.js";
 import type { IntentRecord } from "./types.js";
 
 const DEFAULT_ACTIVE_TOOLS = [
@@ -19,6 +20,8 @@ const DEFAULT_ACTIVE_TOOLS = [
 	"service_observe",
 	"network_observe",
 	"git_inspect",
+	"shell_propose",
+	"shell_apply",
 	"list_capabilities",
 	"activate_capabilities",
 ];
@@ -42,6 +45,32 @@ interface CapabilityListParams extends Record<string, unknown> {
 
 interface CapabilityActivateParams extends Record<string, unknown> {
 	names: string[];
+}
+
+const ShellProposeParams = Type.Object({
+	command: Type.String({ minLength: 1, description: "Exact zsh command to propose without executing it" }),
+	reason: Type.String({ minLength: 1, description: "Why this effect is needed" }),
+	resources: Type.Array(Type.String(), {
+		minItems: 1,
+		maxItems: 16,
+		description: "Files, services, processes, ports, or other resources the command may affect",
+	}),
+	selector: Type.Optional(Type.String({ description: "ish capsule selector; defaults to the shell asking Pi" })),
+});
+
+const ShellApplyParams = Type.Object({
+	id: Type.String({ pattern: "^op_[a-f0-9]{20}$", description: "Proposal ID returned by shell_propose" }),
+});
+
+interface ShellProposeParams extends Record<string, unknown> {
+	command: string;
+	reason: string;
+	resources: string[];
+	selector?: string;
+}
+
+interface ShellApplyParams extends Record<string, unknown> {
+	id: string;
 }
 
 function unique(values: string[]): string[] {
@@ -144,6 +173,53 @@ export default function (pi: PiExtensionAPI) {
 
 	registerSystemInspect(pi);
 	registerSystemObserve(pi);
+
+	pi.registerTool<ShellProposeParams>({
+		name: "shell_propose",
+		label: "Propose Shell Effect",
+		description:
+			"Persist an exact command as a non-executing ish proposal. Declare why it is needed and every known affected resource. The user must review it in ish before anything runs.",
+		parameters: ShellProposeParams,
+		async execute(_toolCallId, params) {
+			const selector = params.selector?.trim() || (process.env.ISH_CAPSULE_ID ? `capsule:${process.env.ISH_CAPSULE_ID}` : "");
+			if (!selector) throw new Error("no current ish capsule; specify an explicit capsule selector");
+			const risk = assessRisk(params.command);
+			const action = await client().createAction({
+				selector,
+				command: params.command,
+				effectClass: risk.level === "critical" ? "unsafe" : "effectful",
+				reason: params.reason,
+				resources: params.resources,
+				provenance: requester(),
+				requireApproval: true,
+			});
+			const result = {
+				id: action.id,
+				status: action.status,
+				approval: action.approval,
+				command: action.command,
+				risk: action.risk,
+				next: `Run /apply ${action.id} in ish to review and approve once.`,
+			};
+			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+		},
+	});
+
+	pi.registerTool<ShellApplyParams>({
+		name: "shell_apply",
+		label: "Request Shell Approval",
+		description:
+			"Hand a persisted shell proposal back to the user for interactive ish approval. This tool never executes or approves the command.",
+		parameters: ShellApplyParams,
+		async execute(_toolCallId, params) {
+			const action = await client().getAction(params.id);
+			const next = action.approval === "pending"
+				? `Run /apply ${action.id} in ish to inspect the exact command, targets, cwd witnesses, resources, and risk before approving once.`
+				: `Proposal ${action.id} is ${action.approval} with status ${action.status}; it was not executed by shell_apply.`;
+			const result = { id: action.id, approval: action.approval, status: action.status, next };
+			return { content: [{ type: "text", text: next }], details: result };
+		},
+	});
 
 	pi.registerTool<CapabilityListParams>({
 		name: "list_capabilities",

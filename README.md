@@ -121,6 +121,18 @@ the default prompt; Pi can activate the relevant extension tool when a request
 needs it. Pi's built-in `bash`, `edit`, and `write` tools remain inactive unless
 the user explicitly includes them in `ISH_PI_TOOLS`.
 
+When Pi needs to change the system, it can persist an exact command proposal
+but cannot run it. ish returns an `op_...` ID; review the command, target shell,
+working-directory witness, affected resources, provenance, and risk with:
+
+```text
+/apply op_EXAMPLE
+```
+
+Press `y` to approve that persisted command once or any other key to cancel it.
+Cancellation and per-shell outcomes remain visible in `/actions`; headless Pi
+sessions cannot approve proposals.
+
 Optional external knowledge is explicit and removable:
 
 ```bash

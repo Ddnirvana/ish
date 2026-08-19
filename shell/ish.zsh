@@ -106,6 +106,46 @@ _ish_confirm_risk() {
   esac
 }
 
+_ish_apply_proposal() {
+  emulate -L zsh
+  local line="$1"
+  local action_id="${line#/apply }"
+  local preview
+  if ! preview="$(command ishctl action-preview "$action_id" 2>&1)"; then
+    zle -M "ish could not open $action_id: $preview"
+    zle -R
+    return
+  fi
+
+  print -s -- "$line"
+  zle -I
+  print -r -- ""
+  print -r -- "$preview"
+  zle -M "ish approval: y=apply once n=cancel"
+  zle -R
+  local answer
+  read -rk 1 answer
+
+  BUFFER=""
+  CURSOR=0
+  if [[ "${answer:l}" == y ]]; then
+    local current_cwd_token
+    current_cwd_token="$(command ishctl digest -- "$PWD" 2>/dev/null)" || current_cwd_token=""
+    if ISH_ZLE_APPROVAL=1 command ishctl action-approve "$action_id" \
+      --capsule "$_ISH_CAPSULE_ID" --generation "$_ISH_GENERATION" --cwd-token "$current_cwd_token" \
+      >/dev/null 2>&1; then
+      zle -M "ish approved $action_id once; waiting for capsule execution"
+    else
+      zle -M "ish could not approve $action_id; inspect it with /actions"
+    fi
+  else
+    command ishctl action-cancel "$action_id" --witness "cancelled by user in ish" >/dev/null 2>&1
+    zle -M "ish cancelled $action_id; no command was run"
+  fi
+  zle reset-prompt
+  zle -R
+}
+
 _ish_report_action() {
   local state="$1"
   local exit_code="${2:-}"
@@ -164,15 +204,21 @@ _ish_preexec() {
 
 _ish_precmd() {
   local previous_status=$?
+	local prepared_prompt_witness=0
 	if [[ -n "$_ISH_TRANSCRIPT_ID" ]]; then
 		print -rn -- $'\e]777;ish;end;'"$_ISH_TRANSCRIPT_ID"";$previous_status"$'\a'
 		_ISH_TRANSCRIPT_ID=""
 	fi
+  if [[ -n "$_ISH_CAPSULE_ID" && ( -n "$_ISH_PENDING_AGENT" || -n "$_ISH_PENDING_CONTROL" ) ]]; then
+    (( _ISH_GENERATION += 1 ))
+    command ishctl capsule-update --id "$_ISH_CAPSULE_ID" --generation "$_ISH_GENERATION" --cwd "$PWD" --mode running --line-editor inactive >/dev/null 2>&1 || true
+    prepared_prompt_witness=1
+  fi
   if [[ -n "$_ISH_PENDING_AGENT" ]]; then
     local prompt="$_ISH_PENDING_AGENT"
     _ISH_PENDING_AGENT=""
     if (( $+commands[ishctl] )); then
-      ISH_TUI=1 command ishctl ask -- "$prompt"
+      ISH_TUI=1 ISH_CAPSULE_ID="$_ISH_CAPSULE_ID" command ishctl ask -- "$prompt"
     else
       print -u2 -r -- "ish: agent support is unavailable; run 'ish doctor'"
     fi
@@ -180,6 +226,9 @@ _ish_precmd() {
     local control="$_ISH_PENDING_CONTROL"
     _ISH_PENDING_CONTROL=""
     ISH_TUI=1 command ishctl shell-control -- "$control"
+  fi
+  if (( prepared_prompt_witness )); then
+    command ishctl capsule-update --id "$_ISH_CAPSULE_ID" --generation "$_ISH_GENERATION" --cwd "$PWD" --mode prompt --line-editor ready >/dev/null 2>&1 || true
   fi
   if (( _ISH_RESTORE_HIST_IGNORE_SPACE )); then
     unsetopt hist_ignore_space
@@ -195,8 +244,10 @@ _ish_precmd() {
     _ISH_ACTIVE_ACTION=""
     _ISH_ACTIVE_COMMAND=""
   fi
-  (( _ISH_GENERATION += 1 ))
-  _ish_async_ctl capsule-update --id "$_ISH_CAPSULE_ID" --generation "$_ISH_GENERATION" --cwd "$PWD" --mode prompt --line-editor ready
+  if (( ! prepared_prompt_witness )); then
+    (( _ISH_GENERATION += 1 ))
+    _ish_async_ctl capsule-update --id "$_ISH_CAPSULE_ID" --generation "$_ISH_GENERATION" --cwd "$PWD" --mode prompt --line-editor ready
+  fi
 }
 
 _ish_action_ready_widget() {
@@ -303,6 +354,7 @@ _ish_shutdown_capsule() {
   (( _ISH_ACTION_FD >= 0 )) && zle -F "$_ISH_ACTION_FD" 2>/dev/null || true
   (( _ISH_ACTION_FD >= 0 )) && exec {_ISH_ACTION_FD}>&- 2>/dev/null || true
   [[ -n "$_ISH_ACTION_FIFO" ]] && command rm -f -- "$_ISH_ACTION_FIFO"
+  unset ISH_CAPSULE_ID
 }
 
 _ish_initialize_capsule() {
@@ -316,6 +368,7 @@ _ish_initialize_capsule() {
   local endpoint_dir="$runtime_root/capsules"
   command mkdir -p -m 700 -- "$endpoint_dir" || return 0
   _ISH_CAPSULE_ID="$(command ishctl capsule-id 2>/dev/null)" || { _ISH_CAPSULE_ID=""; return 0; }
+  export ISH_CAPSULE_ID="$_ISH_CAPSULE_ID"
   _ISH_ACTION_FIFO="$endpoint_dir/${_ISH_CAPSULE_ID}.fifo"
   command rm -f -- "$_ISH_ACTION_FIFO"
   command mkfifo -m 600 -- "$_ISH_ACTION_FIFO" || { _ISH_CAPSULE_ID=""; return 0; }
@@ -363,6 +416,11 @@ _ish_initialize_capsule() {
 _ish_accept_line() {
   emulate -L zsh
   local line="$BUFFER"
+
+  if [[ "$line" =~ '^/apply op_[a-f0-9]{20}$' ]]; then
+    _ish_apply_proposal "$line"
+    return
+  fi
 
   if _ish_risk_candidate "$line" && ! _ish_confirm_risk "$line"; then
     return

@@ -55,6 +55,8 @@ test("Pi registers extension tools, activates a narrow baseline, and ignores unt
 	assert.ok(registered.includes("bash"), "built-in tools must remain registered for explicit policy decisions");
 	assert.ok(registered.includes("list_capabilities"));
 	assert.ok(registered.includes("activate_capabilities"));
+	assert.ok(registered.includes("shell_propose"));
+	assert.ok(registered.includes("shell_apply"));
 	assert.deepEqual(session.getActiveToolNames(), [
 		"read",
 		"grep",
@@ -68,6 +70,8 @@ test("Pi registers extension tools, activates a narrow baseline, and ignores unt
 		"service_observe",
 		"network_observe",
 		"git_inspect",
+		"shell_propose",
+		"shell_apply",
 		"list_capabilities",
 		"activate_capabilities",
 	]);

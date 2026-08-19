@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-import { constants } from "node:fs";
+import { constants, realpathSync, statSync } from "node:fs";
 import { lstat, mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { assessRisk, type RiskAssessment } from "./risk.js";
 
 export type CapsuleMode = "prompt" | "running" | "offline";
 export type LineEditorState = "ready" | "busy" | "inactive";
@@ -16,9 +17,11 @@ export type ActionTargetState =
 	| "stale"
 	| "busy"
 	| "denied"
+	| "cancelled"
 	| "unreached"
 	| "uncertain";
-export type ActionStatus = "planned" | "running" | "succeeded" | "failed" | "partial" | "uncertain";
+export type ActionStatus = "planned" | "running" | "succeeded" | "failed" | "partial" | "cancelled" | "uncertain";
+export type ActionApproval = "not-required" | "pending" | "approved" | "cancelled";
 
 export interface CapsuleScope {
 	host: string;
@@ -86,6 +89,13 @@ export interface ActionRecord {
 	selector: string;
 	command: string;
 	effectClass: EffectClass;
+	reason: string;
+	resources: string[];
+	provenance: string;
+	risk: RiskAssessment;
+	approval: ActionApproval;
+	approvalUpdatedAt?: string;
+	approvalWitness?: string;
 	status: ActionStatus;
 	createdAt: string;
 	updatedAt: string;
@@ -97,7 +107,18 @@ export interface CreateAction {
 	selector: string;
 	command: string;
 	effectClass: EffectClass;
+	reason?: string;
+	resources?: string[];
+	provenance?: string;
+	requireApproval?: boolean;
 	ttlMs?: number;
+}
+
+export interface ApproveAction {
+	actionId: string;
+	capsuleId: string;
+	generation: number;
+	cwdToken: string;
 }
 
 export interface AdmitAction {
@@ -118,7 +139,7 @@ export interface ReportAction {
 }
 
 interface CapsuleFile {
-	version: 1;
+	version: 1 | 2;
 	capsules: CapsuleRecord[];
 	actions: ActionRecord[];
 }
@@ -129,6 +150,7 @@ const TERMINAL_TARGETS = new Set<ActionTargetState>([
 	"stale",
 	"busy",
 	"denied",
+	"cancelled",
 	"unreached",
 	"uncertain",
 ]);
@@ -139,7 +161,15 @@ function now(): string {
 }
 
 export function cwdToken(cwd: string): string {
-	return createHash("sha256").update(cwd).digest("hex");
+	let identity = cwd;
+	try {
+		const resolved = realpathSync(cwd);
+		const metadata = statSync(resolved);
+		identity = `${cwd}\0${resolved}\0${metadata.dev}:${metadata.ino}`;
+	} catch {
+		// Nonexistent test paths retain the stable lexical witness.
+	}
+	return createHash("sha256").update(identity).digest("hex");
 }
 
 export function newCapsuleId(): string {
@@ -148,6 +178,7 @@ export function newCapsuleId(): string {
 
 function actionStatus(targets: ActionTarget[]): ActionStatus {
 	if (targets.length === 0 || targets.every((target) => target.state === "planned")) return "planned";
+	if (targets.every((target) => target.state === "cancelled")) return "cancelled";
 	if (targets.every((target) => target.state === "succeeded")) return "succeeded";
 	if (targets.some((target) => ["dispatched", "admitted", "running"].includes(target.state))) return "running";
 	if (targets.some((target) => target.state === "uncertain")) return "uncertain";
@@ -191,7 +222,7 @@ export class CapsuleActionStore {
 		await mkdir(this.stateDir, { recursive: true, mode: 0o700 });
 		try {
 			const parsed = JSON.parse(await readFile(this.statePath, "utf8")) as CapsuleFile;
-			if (parsed.version !== 1 || !Array.isArray(parsed.capsules) || !Array.isArray(parsed.actions)) {
+			if (![1, 2].includes(parsed.version) || !Array.isArray(parsed.capsules) || !Array.isArray(parsed.actions)) {
 				throw new Error("unsupported capsule/action store format");
 			}
 			for (const capsule of parsed.capsules) {
@@ -201,6 +232,11 @@ export class CapsuleActionStore {
 				this.capsules.set(capsule.id, capsule);
 			}
 			for (const action of parsed.actions) {
+				action.reason ??= "";
+				action.resources ??= [];
+				action.provenance ??= "legacy";
+				action.risk ??= assessRisk(action.command);
+				action.approval ??= "not-required";
 				let changed = false;
 				for (const target of action.targets) {
 					if (!TERMINAL_TARGETS.has(target.state) && target.state !== "planned") {
@@ -299,9 +335,13 @@ export class CapsuleActionStore {
 	}
 
 	async createAction(input: CreateAction): Promise<ActionRecord> {
-		const command = input.command.trim();
-		if (!command) throw new Error("action command is required");
+		const command = input.command;
+		if (!command.trim()) throw new Error("action command is required");
 		if (!["observation", "effectful", "unsafe"].includes(input.effectClass)) throw new Error("invalid effect class");
+		const risk = assessRisk(command);
+		if (risk.level === "critical" && input.effectClass !== "unsafe") {
+			throw new Error(`critical-risk command requires unsafe effect class: ${risk.rule}`);
+		}
 		this.validateEffectClass(command, input.effectClass);
 		const selected = this.listCapsules().filter((capsule) => matches(capsule, input.selector));
 		if (selected.length === 0) throw new Error(`selector matched no active capsules: ${input.selector}`);
@@ -312,6 +352,11 @@ export class CapsuleActionStore {
 			selector: input.selector,
 			command,
 			effectClass: input.effectClass,
+			reason: input.reason?.trim() ?? "",
+			resources: [...new Set((input.resources ?? []).map((resource) => resource.trim()).filter(Boolean))],
+			provenance: input.provenance?.trim() || "ishctl",
+			risk,
+			approval: input.requireApproval ? "pending" : "not-required",
 			status: "planned",
 			createdAt: timestamp,
 			updatedAt: timestamp,
@@ -336,6 +381,8 @@ export class CapsuleActionStore {
 
 	async dispatchAction(id: string): Promise<ActionRecord> {
 		const action = this.requireAction(id);
+		if (action.approval === "pending") throw new Error(`action ${id} requires interactive ish approval`);
+		if (action.approval === "cancelled") throw new Error(`action ${id} was cancelled`);
 		if (action.effectClass === "unsafe") throw new Error("unsafe actions cannot be dispatched automatically");
 		if (Date.now() > Date.parse(action.expiresAt)) {
 			for (const target of action.targets) {
@@ -376,6 +423,41 @@ export class CapsuleActionStore {
 				this.rejectTarget(target, "unreached", `endpoint delivery failed: ${error instanceof Error ? error.message : String(error)}`);
 				await this.persist();
 			}
+		}
+		await this.finishAction(action);
+		return structuredClone(action);
+	}
+
+	async approveAction(input: ApproveAction): Promise<ActionRecord> {
+		const action = this.requireAction(input.actionId);
+		if (action.approval !== "pending") throw new Error(`action ${action.id} approval is ${action.approval}`);
+		if (action.effectClass === "unsafe") {
+			await this.cancelAction(action.id, `unsafe proposal refused: ${action.risk.rule}`);
+			throw new Error(`unsafe proposal cannot be approved: ${action.risk.rule}`);
+		}
+		const capsule = this.requireCapsule(input.capsuleId);
+		this.requireTarget(action, input.capsuleId);
+		if (capsule.generation !== input.generation || capsule.cwdToken !== input.cwdToken) {
+			action.approvalUpdatedAt = now();
+			action.approvalWitness = "interactive approval witness did not match the current shell";
+			await this.persist();
+			throw new Error(action.approvalWitness);
+		}
+		action.approval = "approved";
+		action.approvalUpdatedAt = now();
+		action.approvalWitness = `approved once by ${input.capsuleId} at generation ${input.generation}`;
+		await this.persist();
+		return this.dispatchAction(action.id);
+	}
+
+	async cancelAction(id: string, witness = "cancelled by user in ish"): Promise<ActionRecord> {
+		const action = this.requireAction(id);
+		if (action.approval !== "pending") throw new Error(`action ${action.id} approval is ${action.approval}`);
+		action.approval = "cancelled";
+		action.approvalUpdatedAt = now();
+		action.approvalWitness = witness;
+		for (const target of action.targets) {
+			if (target.state === "planned") this.rejectTarget(target, "cancelled", witness);
 		}
 		await this.finishAction(action);
 		return structuredClone(action);
@@ -461,7 +543,7 @@ export class CapsuleActionStore {
 		}
 	}
 
-	private rejectTarget(target: ActionTarget, state: Extract<ActionTargetState, "stale" | "busy" | "denied" | "unreached">, witness: string): void {
+	private rejectTarget(target: ActionTarget, state: Extract<ActionTargetState, "stale" | "busy" | "denied" | "cancelled" | "unreached">, witness: string): void {
 		target.state = state;
 		target.witness = witness;
 		target.updatedAt = now();
@@ -493,7 +575,7 @@ export class CapsuleActionStore {
 
 	private async persist(): Promise<void> {
 		const snapshot: CapsuleFile = {
-			version: 1,
+			version: 2,
 			capsules: [...this.capsules.values()].map((value) => structuredClone(value)),
 			actions: [...this.actions.values()].map((value) => structuredClone(value)),
 		};
