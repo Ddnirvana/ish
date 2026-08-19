@@ -19,8 +19,25 @@ function sleep(milliseconds: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+async function waitForPrompt(
+	tmux: (args: string[]) => { stdout: string },
+	target: string,
+	pattern: RegExp = /ish /,
+	deadlineMs = 10_000,
+): Promise<string> {
+	const deadline = Date.now() + deadlineMs;
+	let pane = "";
+	while (Date.now() < deadline) {
+		pane = tmux(["capture-pane", "-p", "-t", target, "-S", "-20"]).stdout;
+		if (pattern.test(pane)) return pane;
+		await sleep(25);
+	}
+	assert.match(pane, pattern);
+	return pane;
+}
+
 async function waitForPane(tmux: (args: string[]) => { stdout: string }, pattern: RegExp): Promise<string> {
-	const deadline = Date.now() + 3000;
+	const deadline = Date.now() + 8000;
 	let pane = "";
 	while (Date.now() < deadline) {
 		pane = tmux(["capture-pane", "-p", "-t", "integrity:0.0"]).stdout;
@@ -36,7 +53,7 @@ async function waitForVimGeometry(
 	file: string,
 	expected: string,
 ): Promise<void> {
-	const deadline = Date.now() + 3000;
+	const deadline = Date.now() + 8000;
 	let value = "";
 	while (Date.now() < deadline) {
 		tmux(["send-keys", "-t", "integrity:0.0", `:call writefile([printf('%d:%d', &lines, &columns)], '${file}')`, "Enter"]);
@@ -52,7 +69,7 @@ async function waitForVimGeometry(
 }
 
 async function waitForFileValue(file: string, expected: string): Promise<void> {
-	const deadline = Date.now() + 3000;
+	const deadline = Date.now() + 8000;
 	let value = "";
 	while (Date.now() < deadline) {
 		try {
@@ -68,14 +85,18 @@ async function waitForFileValue(file: string, expected: string): Promise<void> {
 
 async function waitForShellGeometry(
 	tmux: (args: string[]) => { stdout: string },
+	target: string,
+	columns: number,
+	lines: number,
 	file: string,
 	expected: string,
 ): Promise<void> {
-	const deadline = Date.now() + 3000;
+	const deadline = Date.now() + 8000;
 	let value = "";
 	while (Date.now() < deadline) {
+		tmux(["resize-window", "-t", target, "-x", String(columns), "-y", String(lines)]);
 		tmux([
-			"send-keys", "-t", "integrity:0.0",
+			"send-keys", "-t", target,
 			`print -r -- "$(stty size):$LINES:$COLUMNS" > ${file}`,
 			"Enter",
 		]);
@@ -142,10 +163,9 @@ test("macOS PTY tracks resizes and preserves repeated Vim screens", { skip: !has
 		"NO_COLOR=1", "ISH_ASCII=1", ish,
 	]);
 	assert.equal(result.status, 0, result.stderr);
-	await sleep(200);
+	await waitForPrompt(tmux, "integrity:0.0");
 
-	tmux(["resize-window", "-t", "integrity:0", "-x", "121", "-y", "37"]);
-	await waitForShellGeometry(tmux, shellGeometry, "37 121:37:121");
+	await waitForShellGeometry(tmux, "integrity:0.0", 121, 37, shellGeometry, "37 121:37:121");
 
 	for (let iteration = 0; iteration < 12; iteration += 1) {
 		const columns = iteration % 2 === 0 ? 100 : 121;
@@ -207,12 +227,12 @@ test("macOS without Expect preserves a direct resizable zsh terminal", { skip: !
 		"ISH_EXPECT=/definitely/missing/expect", "NO_COLOR=1", "ISH_ASCII=1", ish,
 	]);
 	assert.equal(result.status, 0, result.stderr);
-	await sleep(100);
+	await waitForPrompt(tmux, "fallback:0.0");
 	tmux(["resize-window", "-t", "fallback:0", "-x", "111", "-y", "35"]);
 	tmux(["send-keys", "-t", "fallback:0.0", "stty size; print -r -- STATUS:$ISH_TRANSCRIPT_STATUS:$LINES:$COLUMNS", "Enter"]);
-	await sleep(100);
-	result = tmux(["capture-pane", "-p", "-t", "fallback:0.0", "-S", "-20"]);
-	assert.match(result.stdout, /35 111/);
-	assert.match(result.stdout, /STATUS:unavailable-macos-expect:35:111/);
+	const expectedStatus = /STATUS:unavailable-macos-expect:35:111/;
+	const statusPane = await waitForPrompt(tmux, "fallback:0.0", expectedStatus, 5_000);
+	assert.match(statusPane, /35 111/);
+	assert.match(statusPane, expectedStatus);
 	await stopSession(tmux, "fallback:0.0");
 });

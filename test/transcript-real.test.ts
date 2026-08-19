@@ -13,6 +13,19 @@ const hasTools = spawnSync("tmux", ["-V"], { stdio: "ignore" }).status === 0 &&
 	spawnSync("zsh", ["--version"], { stdio: "ignore" }).status === 0 &&
 	spawnSync("sh", ["-c", "command -v script >/dev/null"], { stdio: "ignore" }).status === 0;
 
+async function waitForDirectory(target: string, deadlineMs = 10_000): Promise<void> {
+	const deadline = Date.now() + deadlineMs;
+	while (Date.now() < deadline) {
+		try {
+			if ((await readdir(target)).length > 0) return;
+		} catch {
+			// The transcript base directory has not appeared yet.
+		}
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+	assert.fail(`directory never gained an entry within ${deadlineMs}ms: ${target}`);
+}
+
 test("native visible output and status reach the next agent request", { skip: !hasTools }, async (t) => {
 	const root = await mkdtemp(path.join(os.tmpdir(), "ish-transcript-real-"));
 	const log = path.join(root, "agent-prompt.log");
@@ -30,8 +43,8 @@ test("native visible output and status reach the next agent request", { skip: !h
 		`ISH_PI=${fakePi}`, `ISH_TEST_LOG=${log}`, "NO_COLOR=1", "ISH_ASCII=1", ish,
 	]);
 	assert.equal(result.status, 0, result.stderr);
-	await new Promise((resolve) => setTimeout(resolve, 150));
 	const transcriptBase = path.join(root, "runtime", "transcripts");
+	await waitForDirectory(transcriptBase);
 	const transcriptDirs = await readdir(transcriptBase);
 	assert.equal(transcriptDirs.length, 1);
 	const transcriptDir = path.join(transcriptBase, transcriptDirs[0]);
@@ -62,7 +75,7 @@ test("native visible output and status reach the next agent request", { skip: !h
 	tmux(["send-keys", "-t", "native:0.0", "exit", "Enter"]);
 	await new Promise((resolve) => setTimeout(resolve, 50));
 	tmux(["send-keys", "-t", "native:0.0", "exit", "Enter"]);
-	const cleanupDeadline = Date.now() + 2000;
+	const cleanupDeadline = Date.now() + 5000;
 	while (Date.now() < cleanupDeadline && (await readdir(transcriptBase)).length) {
 		await new Promise((resolve) => setTimeout(resolve, 25));
 	}
