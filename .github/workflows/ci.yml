@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: build, unit, and regression tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-14
+          - ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22.19
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: npm
+
+      - name: Install tmux on macOS if missing
+        if: runner.os == 'macOS'
+        run: |
+          if ! command -v tmux >/dev/null 2>&1; then brew install tmux; fi
+
+      - name: Install tmux and vim on Linux if missing
+        if: runner.os == 'Linux'
+        run: |
+          if ! command -v tmux >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y tmux; fi
+          if ! command -v vim >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y vim; fi
+
+      - name: Install pinned dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit and regression tests (serial, deterministic)
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:serial 2>&1 | tee "$RUNNER_TEMP/test-output.log"
+
+      - name: Scan for credential-like patterns
+        shell: bash
+        run: |
+          scan() {
+            local pattern="$1"
+            if command -v rg >/dev/null 2>&1; then
+              rg -n --hidden -g '!.git' -g '!node_modules' -g '!dist' "$pattern" .
+            else
+              find . \( -path './.git' -o -path './node_modules' -o -path './dist' \) -prune -o -type f -print0 | xargs -0 grep -InE "$pattern"
+            fi
+          }
+          if scan 'sk-[A-Za-z0-9]{24,}'; then
+            echo "::error::credential-like pattern (sk-...) found in the tree"
+            exit 1
+          fi
+          # [k] keeps this file from matching its own scan pattern text.
+          if scan 'DEEPSEEK_API_KEY=s[k]|OPENAI_API_KEY=s[k]'; then
+            echo "::error::credential-like pattern (provider API key) found in the tree"
+            exit 1
+          fi
+
+      - name: Upload test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output-${{ matrix.os }}
+          path: ${{ runner.temp }}/test-output.log
+          if-no-files-found: ignore
+
+  soak:
+    name: 200-iteration soak regression (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22.19
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: npm
+
+      - name: Install pinned dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Daily soak (200 iterations, durable jobs, daemon restarts)
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:soak 2>&1 | tee "$RUNNER_TEMP/soak-output.log"
+
+      - name: Upload soak log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soak-output
+          path: ${{ runner.temp }}/soak-output.log
+          if-no-files-found: ignore

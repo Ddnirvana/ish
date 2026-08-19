@@ -6,6 +6,7 @@
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-2ea44f">
   <img alt="Node 22.19 or newer" src="https://img.shields.io/badge/node-%3E%3D22.19-339933">
   <img alt="zsh 5.8 or newer" src="https://img.shields.io/badge/zsh-%3E%3D5.8-f15a24">
+  <img alt="CI" src="https://github.com/Ddnirvana/ish/actions/workflows/ci.yml/badge.svg">
 </p>
 
 ![ish terminal demo](assets/ish-demo.gif)

@@ -1,0 +1,51 @@
+name: Security
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-and-scan:
+    name: dependency audit and credential scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22.19
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: npm
+
+      - name: Install pinned dependencies
+        run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Scan for credential-like patterns
+        shell: bash
+        run: |
+          scan() {
+            local pattern="$1"
+            if command -v rg >/dev/null 2>&1; then
+              rg -n --hidden -g '!.git' -g '!node_modules' -g '!dist' "$pattern" .
+            else
+              find . \( -path './.git' -o -path './node_modules' -o -path './dist' \) -prune -o -type f -print0 | xargs -0 grep -InE "$pattern"
+            fi
+          }
+          if scan 'sk-[A-Za-z0-9]{24,}'; then
+            echo "::error::credential-like pattern (sk-...) found in the tree"
+            exit 1
+          fi
+          # [k] keeps this file from matching its own scan pattern text.
+          if scan 'DEEPSEEK_API_KEY=s[k]|OPENAI_API_KEY=s[k]'; then
+            echo "::error::credential-like pattern (provider API key) found in the tree"
+            exit 1
+          fi
